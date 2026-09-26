@@ -6,6 +6,8 @@
 # networking binaries
 networking/tempest/tempest
 networking/mastermind/mastermind
+networking/tempest/tempest.dSYM/
+networking/mastermind/mastermind.dSYM/
 
 # mastermind runtime output
 log.txt
