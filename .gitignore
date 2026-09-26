@@ -21,3 +21,5 @@ compile_commands.json
 
 # course roster, never part of the template
 courseid_*_participants.csv
+
+rough/
