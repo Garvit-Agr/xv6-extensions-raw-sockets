@@ -1,11 +1,12 @@
-#include "net_socket.h"
-#include "cli.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netdb.h>
+
+#include "net_socket.h"
+#include "cli.h"
 
 int connect_to_host(const char *hostname, const char *port) {
     struct addrinfo hints, *res, *p;
@@ -31,7 +32,10 @@ int connect_to_host(const char *hostname, const char *port) {
         break;
     }
 
-    if (p==NULL) die("tempest: failed to connect to host");
+    if (p==NULL) {
+        freeaddrinfo(res);
+        die("tempest: failed to connect to host");
+    }
 
     freeaddrinfo(res);
     return sockfd;
@@ -45,7 +49,7 @@ void send_data(int sockfd, const char *data, size_t length) {
     while (total_sent<length) {
         n=send(sockfd, data+total_sent ,bytes_left, 0);
 
-        if (n==-1) die("tempest: failed to send data");
+        if (n<=0) die("tempest: failed to send data");
 
         total_sent+=n;
         bytes_left-=n;
