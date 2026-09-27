@@ -20,6 +20,10 @@ int main(int argc, char *argv[]) {
     int sockfd=connect_to_host("wttr.is", "80");
     send_data(sockfd, request, strlen(request));
 
+    char *response=receive_data(sockfd);
+    parse_http_response(response, config.raw_output);
+
+    free(response);
     free(encoded_city);
     free(request);
     close_socket(sockfd);

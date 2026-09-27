@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
+#include "cli.h"
 #include "http.h"
 
 char *url_encode(const char *str) {
@@ -57,4 +58,31 @@ void print_raw_request(const char *request) {
         curr=next+2;
     }
     printf(">\n");
+}
+
+void parse_http_response(const char *response, bool raw_output) {
+    const char *body=strstr(response, "\r\n\r\n");
+    if (!body) die("tempest: invalid http response format");
+    
+    if (strncmp(response, "HTTP/1.1 404", 12)==0 || strncmp(response, "HTTP/1.0 404", 12)==0) {
+        die("tempest: invalid location");
+    }
+
+    if (raw_output) {
+        const char *curr=response;
+        const char *next;
+
+        while (curr<body) {
+            next=strstr(curr, "\r\n");
+            if (next && next<=body) {
+                if (next==curr) break;
+                printf("< %.*s\n", (int)(next - curr), curr);
+                curr=next+2;
+            }
+        }
+        printf("<\n");
+    }
+
+    body+=4;
+    printf("%s", body);
 }
