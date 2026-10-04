@@ -8,6 +8,10 @@
 
 #include "discovery.h"
 
+#ifndef SO_REUSEPORT
+#define SO_REUSEPORT 0x0200
+#endif
+
 int init_broadcast_socket(void) {
     int sockfd=socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd<0) {
@@ -24,6 +28,7 @@ int init_broadcast_socket(void) {
 
     int reuse=1;
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse));
 
     struct sockaddr_in local_addr;
     memset(&local_addr, 0, sizeof(local_addr));
