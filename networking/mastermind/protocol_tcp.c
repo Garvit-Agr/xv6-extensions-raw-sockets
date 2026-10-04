@@ -47,21 +47,7 @@ int accept_challenge(int listen_sock, char *challenger_name) {
     memset(challenger_name, 0, 50);
     recv(client_sock, challenger_name, 49, 0);
 
-    printf("\n> %s challenged you! Accept? (yes/no): ", challenger_name);
-    fflush(stdout);
-
-    char response[10];
-    if (fgets(response, sizeof(response), stdin)!=NULL) {
-        response[strcspn(response, "\n")]='\0';
-        if (strcmp(response, "yes")==0) {
-            send(client_sock, "yes", 3, 0);
-            return client_sock;
-        }
-    }
-    
-    send(client_sock, "no", 2, 0);
-    close(client_sock);
-    return -1;
+    return client_sock;
 }
 
 int send_challenge(Player *p, const char *my_name) {

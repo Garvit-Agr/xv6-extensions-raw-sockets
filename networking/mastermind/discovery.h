@@ -17,8 +17,8 @@ typedef struct {
 } Player;
 
 int init_broadcast_socket(void);
-void send_broadcast(int sockfd, const char *name, int listening_port);
-void receive_broadcasts(int sockfd, Player players[], int *player_count);
+void send_broadcast(int sockfd, const char *name, int listening_port, int my_id);
+void receive_broadcasts(int sockfd, Player players[], int *player_count, int *max_known_id);
 void cleanup_stale_players(Player players[], int *player_count);
 void print_players(Player players[], int player_count);
 
