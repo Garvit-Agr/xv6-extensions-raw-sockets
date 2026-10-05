@@ -8,7 +8,7 @@
 
 #include "protocol_tcp.h"
 #include "engine.h"
-#include "ui.h"
+#include "ui.h" 
 
 int init_tcp_listener(int port) {
     int sockfd=socket(AF_INET, SOCK_STREAM, 0);
@@ -87,7 +87,7 @@ void play_mastermind(int sock) {
     char feedbacks[MAX_ATTEMPTS][10];
     int attempts = 0;
 
-    printf("\033[2J\033[H");
+    printf("\033[2J\033[H"); 
     while (1) {
         printf("Enter your 5-digit secret sequence: ");
         if (fgets(secret, sizeof(secret), stdin) != NULL) {
@@ -102,17 +102,21 @@ void play_mastermind(int sock) {
 
     while (attempts < MAX_ATTEMPTS) {
         char guess[10];
-        memset(guess, 0, sizeof(guess));
+        memset(guess, 0, sizeof(guess));     
         int n = recv(sock, guess, sizeof(guess)-1, 0);
         if (n <= 0) {
-            printf("\n> Connection lost.\n");
-            break;
+            display_disconnection_error();
+            return;
         }
 
         char feedback[10];
         memset(feedback, 0, sizeof(feedback));
         get_feedback(secret, guess, feedback);
-        send(sock, feedback, strlen(feedback), 0);
+        
+        if (send(sock, feedback, strlen(feedback), 0) < 0) {
+            display_disconnection_error();
+            return;
+        }
 
         strcpy(guesses[attempts], guess);
         strcpy(feedbacks[attempts], feedback);
@@ -155,16 +159,16 @@ void play_codebreaker(int sock) {
             }
 
             if (send(sock, guess, strlen(guess), 0) < 0) {
-                 printf("\n> Connection lost.\n");
-                 break;
+                 display_disconnection_error();
+                 return;
             }
             
             char feedback[10];
             memset(feedback, 0, sizeof(feedback));
             int n = recv(sock, feedback, sizeof(feedback)-1, 0);
             if (n <= 0) {
-                printf("\n> Connection lost.\n");
-                break;
+                display_disconnection_error();
+                return;
             }
 
             strcpy(guesses[attempts], guess);

@@ -5,5 +5,6 @@
 
 void print_mastermind_board(const char *secret, const char guesses[][10], const char feedbacks[][10], int attempts);
 void print_codebreaker_board(const char guesses[][10], const char feedbacks[][10], int attempts);
+void display_disconnection_error(void);
 
 #endif

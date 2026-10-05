@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "ui.h"
 
@@ -35,4 +36,10 @@ void print_codebreaker_board(const char guesses[][10], const char feedbacks[][10
         printf("\n");
     }
     printf("-------------------------\n");
+}
+
+void display_disconnection_error(void) {
+    printf("\n\033[31m[!]\033[0m \033[1;31mNETWORK ERROR: The opponent abruptly disconnected.\033[0m\n");
+    printf("> Gracefully terminating the match and returning to lobby in 3 seconds...\n");
+    sleep(3);
 }
