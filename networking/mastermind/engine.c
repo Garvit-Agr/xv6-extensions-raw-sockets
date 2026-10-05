@@ -14,6 +14,11 @@ bool validate_sequence(const char *seq) {
 }
 
 void get_feedback(const char *master, const char *attempt, char *feedback) {
+    if (!validate_sequence(master) || !validate_sequence(attempt)) {
+        strcpy(feedback, "error");
+        return;
+    }
+
     int master_counts[10]={0};
     int attempt_counts[10]={0};
     int x_count=0;
