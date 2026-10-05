@@ -13,7 +13,7 @@
 int main(int argc, char *argv[]) {
 
     char player_name[50];
-    int listening_port=8081;
+    int listening_port=8080;
 
     printf("Enter your name: ");
     if (fgets(player_name, sizeof(player_name), stdin)!=NULL) {
@@ -101,7 +101,9 @@ int main(int argc, char *argv[]) {
                         if (strcmp(input, "yes")==0) {
                             send(pending_challenge_sock, "yes", 3, 0);
                             printf("\n[Game Started! You are the Mastermind]\n");
-                            sleep(2);
+                            
+                            play_mastermind(pending_challenge_sock);
+                            
                         } else {
                             send(pending_challenge_sock, "no", 2, 0);
                             printf("\n> Challenge rejected.\n");
@@ -109,6 +111,7 @@ int main(int argc, char *argv[]) {
                         }
                         close(pending_challenge_sock);
                         pending_challenge_sock=-1;
+                        needs_redraw=1;
                     } else if (strncmp(input, "challenge ", 10)==0) {
                         int target_id=atoi(input+10);
                         
@@ -129,7 +132,9 @@ int main(int argc, char *argv[]) {
                                 int game_sock=send_challenge(target, player_name);
                                 if (game_sock>=0) {
                                     printf("\n[Game Started! You are the Codebreaker]\n");
-                                    sleep(2);
+                                    
+                                    play_codebreaker(game_sock);
+                                    
                                     close(game_sock);
                                 } else {
                                     printf("\n> Challenge failed or rejected.\n");
@@ -140,9 +145,9 @@ int main(int argc, char *argv[]) {
                                 sleep(1);
                             }
                         }
+                        needs_redraw=1;
                     }
                 }
-                needs_redraw=1;
             }
         }
 
