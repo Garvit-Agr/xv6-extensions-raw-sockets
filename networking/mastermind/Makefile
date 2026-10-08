@@ -10,5 +10,6 @@ mastermind: $(SRCS)
 
 clean:
 	rm -f mastermind
+	rm -rf mastermind.dSYM
 
 .PHONY: clean
