@@ -60,7 +60,7 @@ void send_broadcast(int sockfd, const char *name, int listening_port, int my_id)
     log_event("Sent UDP broadcast: %s", payload);
 }
 
-void receive_broadcasts(int sockfd, Player players[], int *player_count, int *max_known_id) {
+void receive_broadcasts(int sockfd, Player players[], int *player_count, int *max_known_id, int my_id) {
     char buffer[512];
     struct sockaddr_in sender_addr;
     socklen_t sender_len=sizeof(sender_addr);
@@ -79,6 +79,8 @@ void receive_broadcasts(int sockfd, Player players[], int *player_count, int *ma
             int port=atoi(port_str);
             int remote_id=atoi(id_str);
             if (remote_id > *max_known_id) *max_known_id=remote_id;
+
+            if (my_id>0 && remote_id==my_id) return;
 
             char ip[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &(sender_addr.sin_addr), ip, INET_ADDRSTRLEN);

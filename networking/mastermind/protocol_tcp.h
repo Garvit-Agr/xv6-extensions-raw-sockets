@@ -7,7 +7,7 @@ int init_tcp_listener(int port);
 int accept_challenge(int listen_sock, char *challenger_name);
 int send_challenge(Player *p, const char *my_name);
 
-void play_mastermind(int sock);
-void play_codebreaker(int sock);
+void play_mastermind(int sock, const char *opponent_name);
+void play_codebreaker(int sock, const char *opponent_name);
 
 #endif

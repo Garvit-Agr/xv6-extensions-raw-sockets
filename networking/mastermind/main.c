@@ -36,6 +36,7 @@ int main(int argc, char *argv[]) {
     Player players[MAX_PLAYERS];
     int player_count=0;
     int pending_challenge_sock=-1;
+    char pending_challenger_name[50]={0};
     int max_known_id=0;
     int my_id=0;
 
@@ -51,7 +52,7 @@ int main(int argc, char *argv[]) {
         if (elapsed>=2500) break;
         
         if (poll(&init_pfd, 1, 2500-elapsed)>0) {
-            receive_broadcasts(bcast_sock, players, &player_count, &max_known_id);
+            receive_broadcasts(bcast_sock, players, &player_count, &max_known_id, 0);
         }
     }
     my_id=max_known_id+1;
@@ -76,7 +77,7 @@ int main(int argc, char *argv[]) {
         if (needs_redraw) {
             print_players(players, player_count);
             if (pending_challenge_sock != -1) {
-                printf("> Challenge pending! Accept? (yes/no): ");
+                printf("> %s challenged you! Accept? (yes/no): ", pending_challenger_name);
                 fflush(stdout);
             }
             needs_redraw=0;
@@ -92,7 +93,7 @@ int main(int argc, char *argv[]) {
 
         if (ret>0) {
             if (pfds[0].revents & POLLIN) {
-                receive_broadcasts(bcast_sock, players, &player_count, &max_known_id);
+                receive_broadcasts(bcast_sock, players, &player_count, &max_known_id, my_id);
                 needs_redraw=1;
             }
 
@@ -102,6 +103,8 @@ int main(int argc, char *argv[]) {
                 if (game_sock>=0) {
                     if (pending_challenge_sock!=-1) close(pending_challenge_sock);
                     pending_challenge_sock=game_sock;
+                    strncpy(pending_challenger_name, challenger, sizeof(pending_challenger_name)-1);
+                    pending_challenger_name[sizeof(pending_challenger_name)-1] = '\0';
                     needs_redraw=1;
                 }
             }
@@ -117,7 +120,7 @@ int main(int argc, char *argv[]) {
                             log_event("Sent TCP challenge response: yes (Transitioning to Codebreaker)");
                             printf("\n[Game Started! You are the Codebreaker]\n");
                             
-                            play_codebreaker(pending_challenge_sock);
+                            play_codebreaker(pending_challenge_sock, pending_challenger_name);
                             log_event("Codebreaker game loop terminated. Returning to lobby.");
                         } else {
                             send(pending_challenge_sock, "no", 2, 0);
@@ -147,10 +150,10 @@ int main(int argc, char *argv[]) {
                             if (target) {
                                 int game_sock=send_challenge(target, player_name);
                                 if (game_sock>=0) {
-                                    log_event("Transitioning to Mastermind loop with ID %d.", target->id);
+                                    log_event("Transitioning to Mastermind loop with ID %d (%s).", target->id, target->name);
                                     printf("\n[Game Started! You are the Mastermind]\n");
                                     
-                                    play_mastermind(game_sock);
+                                    play_mastermind(game_sock, target->name);
                                     log_event("Mastermind game loop terminated. Returning to lobby.");
                                     close(game_sock);
                                 } else {

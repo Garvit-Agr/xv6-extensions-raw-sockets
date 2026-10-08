@@ -85,7 +85,7 @@ int send_challenge(Player *p, const char *my_name) {
     }
 }
 
-void play_mastermind(int sock) {
+void play_mastermind(int sock, const char *opponent_name) {
     char secret[100];
     char guesses[MAX_ATTEMPTS][10];
     char feedbacks[MAX_ATTEMPTS][10];
@@ -110,11 +110,11 @@ void play_mastermind(int sock) {
         memset(guess, 0, sizeof(guess));     
         int n=recv(sock, guess, sizeof(guess)-1, 0);
         if (n<=0) {
-            log_event("Connection lost while waiting for guess.");
-            display_disconnection_error();
+            log_event("Connection lost while waiting for guess from %s.", opponent_name);
+            display_disconnection_error(opponent_name);
             return;
         }
-        log_event("Received guess from Codebreaker: %s", guess);
+        log_event("Received guess from Codebreaker (%s): %s", opponent_name, guess);
 
         char auto_fb[10];
         memset(auto_fb, 0, sizeof(auto_fb));
@@ -139,11 +139,11 @@ void play_mastermind(int sock) {
         }
         
         if (send(sock, feedback, strlen(feedback), 0)<0) {
-            log_event("Connection lost while sending feedback.");
-            display_disconnection_error();
+            log_event("Connection lost while sending feedback to %s.", opponent_name);
+            display_disconnection_error(opponent_name);
             return;
         }
-        log_event("Sent feedback to Codebreaker: %s", feedback);
+        log_event("Sent feedback to Codebreaker (%s): %s", opponent_name, feedback);
 
         strcpy(guesses[attempts], guess);
         strcpy(feedbacks[attempts], feedback);
@@ -162,14 +162,14 @@ void play_mastermind(int sock) {
         else printf("> Waiting for Codebreaker's next guess...\n");
     }
 
-    if (send(sock, secret, 5, 0)>=0) log_event("Sent master sequence to Codebreaker at game end: %s", secret);
+    if (send(sock, secret, 5, 0)>=0) log_event("Sent master sequence to Codebreaker (%s) at game end: %s", opponent_name, secret);
 
     printf("> Press Enter to go home...");
     char dummy[10];
     fgets(dummy, sizeof(dummy), stdin);
 }
 
-void play_codebreaker(int sock) {
+void play_codebreaker(int sock, const char *opponent_name) {
     char guesses[MAX_ATTEMPTS][10];
     char feedbacks[MAX_ATTEMPTS][10];
     char revealed_secret[10]={0};
@@ -189,25 +189,25 @@ void play_codebreaker(int sock) {
             }
 
             if (send(sock, guess, strlen(guess), 0)<0) {
-                log_event("Connection lost while sending guess.");
-                display_disconnection_error();
+                log_event("Connection lost while sending guess to %s.", opponent_name);
+                display_disconnection_error(opponent_name);
                 return;
             }
-            log_event("Sent guess to Mastermind: %s", guess);
+            log_event("Sent guess to Mastermind (%s): %s", opponent_name, guess);
             
             printf("> Waiting for Mastermind's feedback...\n");
             char feedback[10];
             memset(feedback, 0, sizeof(feedback));
             int n=recv(sock, feedback, 5, 0);
             if (n<=0) {
-                log_event("Connection lost while waiting for feedback.");
-                display_disconnection_error();
+                log_event("Connection lost while waiting for feedback from %s.", opponent_name);
+                display_disconnection_error(opponent_name);
                 return;
             }
             feedback[n]='\0';
-            log_event("Received feedback from Mastermind: %s", feedback);
+            log_event("Received feedback from Mastermind (%s): %s", opponent_name, feedback);
 
-            if (!validate_feedback(feedback)) log_event("Received malformed feedback from Mastermind: %s", feedback);
+            if (!validate_feedback(feedback)) log_event("Received malformed feedback from Mastermind (%s): %s", opponent_name, feedback);
 
             strcpy(guesses[attempts], guess);
             strcpy(feedbacks[attempts], feedback);
@@ -217,11 +217,15 @@ void play_codebreaker(int sock) {
 
             if (strcmp(feedback, "xxxxx")==0 || attempts==MAX_ATTEMPTS) {
                 int m=recv(sock, revealed_secret, 5, 0);
-                if (m>0) {
-                    revealed_secret[m]='\0';
-                    log_event("Received master sequence from Mastermind: %s", revealed_secret);
-                    print_codebreaker_board(revealed_secret, guesses, feedbacks, attempts);
+                if (m<=0) {
+                    log_event("Connection lost while receiving master sequence from %s.", opponent_name);
+                    display_disconnection_error(opponent_name);
+                    return;
                 }
+                revealed_secret[m]='\0';
+                log_event("Received master sequence from Mastermind (%s): %s", opponent_name, revealed_secret);
+                print_codebreaker_board(revealed_secret, guesses, feedbacks, attempts);
+                
                 if (strcmp(feedback, "xxxxx")==0) printf("> You broke the code! Game Over.\n");
                 else printf("> Out of attempts! Game Over.\n");
 

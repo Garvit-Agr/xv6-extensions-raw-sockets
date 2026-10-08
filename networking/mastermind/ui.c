@@ -44,8 +44,9 @@ void print_codebreaker_board(const char *revealed_secret, const char guesses[][1
     printf("-------------------------\n");
 }
 
-void display_disconnection_error(void) {
-    printf("\n\033[31m[!]\033[0m \033[1;31mNETWORK ERROR: The opponent abruptly disconnected.\033[0m\n");
-    printf("> Gracefully terminating the match and returning to lobby in 3 seconds...\n");
-    sleep(3);
+void display_disconnection_error(const char *opponent_name) {
+    printf("\n%s disconnected. Press enter to go home.\n", opponent_name);
+    fflush(stdout);
+    char dummy[10];
+    fgets(dummy, sizeof(dummy), stdin);
 }
