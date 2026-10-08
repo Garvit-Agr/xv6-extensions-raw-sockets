@@ -9,8 +9,18 @@
 #include "engine.h"
 #include "discovery.h"
 #include "protocol_tcp.h"
+#include "logger.h"
 
 int main(int argc, char *argv[]) {
+    bool enable_logging = false;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--log") == 0) {
+            enable_logging = true;
+            break;
+        }
+    }
+    init_logger(enable_logging);
+    log_event("Application initialized. Logging enabled.");
 
     char player_name[50];
     int listening_port=8080;
@@ -28,6 +38,9 @@ int main(int argc, char *argv[]) {
     int pending_challenge_sock=-1;
     int max_known_id=0;
     int my_id=0;
+
+    log_event("Starting 2.5s network discovery phase...");
+    
     struct timespec init_start, init_now;
     clock_gettime(CLOCK_MONOTONIC, &init_start);
     struct pollfd init_pfd={bcast_sock, POLLIN, 0};
@@ -42,6 +55,7 @@ int main(int argc, char *argv[]) {
         }
     }
     my_id=max_known_id+1;
+    log_event("Discovery complete. Self-assigned ID: %d", my_id);
     
     struct timespec last_bcast;
     clock_gettime(CLOCK_MONOTONIC, &last_bcast);
@@ -100,12 +114,14 @@ int main(int argc, char *argv[]) {
                     if (pending_challenge_sock!=-1) {
                         if (strcmp(input, "yes")==0) {
                             send(pending_challenge_sock, "yes", 3, 0);
+                            log_event("Sent TCP challenge response: yes (Transitioning to Mastermind)");
                             printf("\n[Game Started! You are the Mastermind]\n");
                             
                             play_mastermind(pending_challenge_sock);
-                            
+                            log_event("Mastermind game loop terminated. Returning to lobby.");
                         } else {
                             send(pending_challenge_sock, "no", 2, 0);
+                            log_event("Sent TCP challenge response: no");
                             printf("\n> Challenge rejected.\n");
                             sleep(1);
                         }
@@ -131,10 +147,11 @@ int main(int argc, char *argv[]) {
                             if (target) {
                                 int game_sock=send_challenge(target, player_name);
                                 if (game_sock>=0) {
+                                    log_event("Transitioning to Codebreaker loop with ID %d.", target->id);
                                     printf("\n[Game Started! You are the Codebreaker]\n");
                                     
                                     play_codebreaker(game_sock);
-                                    
+                                    log_event("Codebreaker game loop terminated. Returning to lobby.");
                                     close(game_sock);
                                 } else {
                                     printf("\n> Challenge failed or rejected.\n");

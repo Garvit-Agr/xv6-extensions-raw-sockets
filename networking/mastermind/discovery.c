@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 
 #include "discovery.h"
+#include "logger.h"
 
 #ifndef SO_REUSEPORT
 #define SO_REUSEPORT 0x0200
@@ -56,6 +57,7 @@ void send_broadcast(int sockfd, const char *name, int listening_port, int my_id)
     snprintf(payload, sizeof(payload), "%s|%s|%d|%d", MAGIC_PACKET, name, listening_port, my_id);
 
     sendto(sockfd, payload, strlen(payload), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
+    log_event("Sent UDP broadcast: %s", payload);
 }
 
 void receive_broadcasts(int sockfd, Player players[], int *player_count, int *max_known_id) {
@@ -80,6 +82,8 @@ void receive_broadcasts(int sockfd, Player players[], int *player_count, int *ma
 
             char ip[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &(sender_addr.sin_addr), ip, INET_ADDRSTRLEN);
+            
+            log_event("Received UDP broadcast from %s (ID: %d, IP: %s, Port: %d)", name, remote_id, ip, port);
 
             int found=0;
             struct timespec now;
@@ -116,7 +120,10 @@ void cleanup_stale_players(Player players[], int *player_count) {
     for (int i=0; i<*player_count; i++) {
         if (players[i].active) {
             long elapsed_sec=now.tv_sec-players[i].last_seen.tv_sec;
-            if (elapsed_sec>=5) players[i].active=0;
+            if (elapsed_sec>=5) {
+                players[i].active=0;
+                log_event("Player %s (ID: %d) timed out after %ld seconds of inactivity.", players[i].name, players[i].id, elapsed_sec);
+            }
         }
     }
 }

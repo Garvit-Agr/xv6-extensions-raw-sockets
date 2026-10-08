@@ -9,6 +9,7 @@
 #include "protocol_tcp.h"
 #include "engine.h"
 #include "ui.h" 
+#include "logger.h"
 
 int init_tcp_listener(int port) {
     int sockfd=socket(AF_INET, SOCK_STREAM, 0);
@@ -48,6 +49,7 @@ int accept_challenge(int listen_sock, char *challenger_name) {
 
     memset(challenger_name, 0, 50);
     recv(client_sock, challenger_name, 49, 0);
+    log_event("Received TCP challenge request from %s", challenger_name);
 
     return client_sock;
 }
@@ -69,10 +71,12 @@ int send_challenge(Player *p, const char *my_name) {
     }
 
     send(sockfd, my_name, strlen(my_name), 0);
+    log_event("Sent TCP challenge request to %s (%s:%d)", p->name, p->ip_addr, p->port);
     
     char response[10];
     memset(response, 0, sizeof(response));
     recv(sockfd, response, sizeof(response)-1, 0);
+    log_event("Received TCP challenge response from %s: %s", p->name, response);
 
     if (strcmp(response, "yes")==0) return sockfd;
     else {
@@ -97,6 +101,7 @@ void play_mastermind(int sock) {
         }
     }
     
+    log_event("Mastermind locked in secret sequence: %s", secret);
     print_mastermind_board(secret, guesses, feedbacks, attempts);
     printf("> Secret locked in. Waiting for Codebreaker's guesses...\n");
 
@@ -105,18 +110,22 @@ void play_mastermind(int sock) {
         memset(guess, 0, sizeof(guess));     
         int n = recv(sock, guess, sizeof(guess)-1, 0);
         if (n <= 0) {
+            log_event("Connection lost while waiting for guess.");
             display_disconnection_error();
             return;
         }
+        log_event("Received guess from Codebreaker: %s", guess);
 
         char feedback[10];
         memset(feedback, 0, sizeof(feedback));
         get_feedback(secret, guess, feedback);
         
         if (send(sock, feedback, strlen(feedback), 0) < 0) {
+            log_event("Connection lost while sending feedback.");
             display_disconnection_error();
             return;
         }
+        log_event("Sent feedback to Codebreaker: %s", feedback);
 
         strcpy(guesses[attempts], guess);
         strcpy(feedbacks[attempts], feedback);
@@ -159,17 +168,21 @@ void play_codebreaker(int sock) {
             }
 
             if (send(sock, guess, strlen(guess), 0) < 0) {
+                 log_event("Connection lost while sending guess.");
                  display_disconnection_error();
                  return;
             }
+            log_event("Sent guess to Mastermind: %s", guess);
             
             char feedback[10];
             memset(feedback, 0, sizeof(feedback));
             int n = recv(sock, feedback, sizeof(feedback)-1, 0);
             if (n <= 0) {
+                log_event("Connection lost while waiting for feedback.");
                 display_disconnection_error();
                 return;
             }
+            log_event("Received feedback from Mastermind: %s", feedback);
 
             strcpy(guesses[attempts], guess);
             strcpy(feedbacks[attempts], feedback);
