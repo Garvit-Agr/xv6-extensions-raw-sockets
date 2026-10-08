@@ -18,14 +18,14 @@ void print_mastermind_board(const char *secret, const char guesses[][10], const 
     printf("=== MASTERMIND BOARD ===\n");
     for (int i=0; i<MAX_ATTEMPTS; i++) {
         if (i<attempts) {
-            printf("%s ", guesses[i]);
+            printf("%s   ", guesses[i]);
             print_colored_feedback(feedbacks[i]);
             printf("\n");
         }
-        else printf("*****\n");
+        else printf("*****   *****\n");
     }
-    printf("\n%s\n", secret);
-    printf("------------------------\n");
+    printf("-----\n");
+    printf("%s\n\n", secret);
 }
 
 void print_codebreaker_board(const char *revealed_secret, const char guesses[][10], const char feedbacks[][10], int attempts) {
@@ -33,15 +33,16 @@ void print_codebreaker_board(const char *revealed_secret, const char guesses[][1
     printf("=== CODEBREAKER BOARD ===\n");
     for (int i=0; i<MAX_ATTEMPTS; i++) {
         if (i<attempts) {
-            printf("%s ", guesses[i]);
+            printf("%s   ", guesses[i]);
             print_colored_feedback(feedbacks[i]);
             printf("\n");
         }
-        else printf("*****\n");
+        else printf("*****   *****\n");
     }
-    if (revealed_secret!=NULL && strlen(revealed_secret)==5) printf("\n%s\n", revealed_secret);
-    else printf("\n*****\n");
-    printf("-------------------------\n");
+    printf("-----\n");
+    if (revealed_secret != NULL && strlen(revealed_secret) == 5) printf("%s\n\n", revealed_secret);
+
+    else printf("*****\n\n");
 }
 
 void display_disconnection_error(const char *opponent_name) {
