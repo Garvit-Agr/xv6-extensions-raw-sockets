@@ -114,11 +114,11 @@ int main(int argc, char *argv[]) {
                     if (pending_challenge_sock!=-1) {
                         if (strcmp(input, "yes")==0) {
                             send(pending_challenge_sock, "yes", 3, 0);
-                            log_event("Sent TCP challenge response: yes (Transitioning to Mastermind)");
-                            printf("\n[Game Started! You are the Mastermind]\n");
+                            log_event("Sent TCP challenge response: yes (Transitioning to Codebreaker)");
+                            printf("\n[Game Started! You are the Codebreaker]\n");
                             
-                            play_mastermind(pending_challenge_sock);
-                            log_event("Mastermind game loop terminated. Returning to lobby.");
+                            play_codebreaker(pending_challenge_sock);
+                            log_event("Codebreaker game loop terminated. Returning to lobby.");
                         } else {
                             send(pending_challenge_sock, "no", 2, 0);
                             log_event("Sent TCP challenge response: no");
@@ -147,11 +147,11 @@ int main(int argc, char *argv[]) {
                             if (target) {
                                 int game_sock=send_challenge(target, player_name);
                                 if (game_sock>=0) {
-                                    log_event("Transitioning to Codebreaker loop with ID %d.", target->id);
-                                    printf("\n[Game Started! You are the Codebreaker]\n");
+                                    log_event("Transitioning to Mastermind loop with ID %d.", target->id);
+                                    printf("\n[Game Started! You are the Mastermind]\n");
                                     
-                                    play_codebreaker(game_sock);
-                                    log_event("Codebreaker game loop terminated. Returning to lobby.");
+                                    play_mastermind(game_sock);
+                                    log_event("Mastermind game loop terminated. Returning to lobby.");
                                     close(game_sock);
                                 } else {
                                     printf("\n> Challenge failed or rejected.\n");

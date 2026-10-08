@@ -13,6 +13,16 @@ bool validate_sequence(const char *seq) {
     return true;
 }
 
+bool validate_feedback(const char *fb) {
+    if (!fb) return false;
+    if (strlen(fb)!=5) return false;
+
+    for (int i=0; i<5; i++) {
+        if (fb[i]!='o' && fb[i]!='x' && fb[i]!='-') return false;
+    }
+    return true;
+}
+
 void get_feedback(const char *master, const char *attempt, char *feedback) {
     if (!validate_sequence(master) || !validate_sequence(attempt)) {
         strcpy(feedback, "error");

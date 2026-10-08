@@ -89,13 +89,13 @@ void play_mastermind(int sock) {
     char secret[100];
     char guesses[MAX_ATTEMPTS][10];
     char feedbacks[MAX_ATTEMPTS][10];
-    int attempts = 0;
+    int attempts=0;
 
     printf("\033[2J\033[H"); 
     while (1) {
         printf("Enter your 5-digit secret sequence: ");
-        if (fgets(secret, sizeof(secret), stdin) != NULL) {
-            secret[strcspn(secret, "\n")] = '\0';
+        if (fgets(secret, sizeof(secret), stdin)!=NULL) {
+            secret[strcspn(secret, "\n")]='\0';
             if (validate_sequence(secret)) break;
             printf("> Invalid sequence. Must be exactly 5 digits.\n");
         }
@@ -105,22 +105,40 @@ void play_mastermind(int sock) {
     print_mastermind_board(secret, guesses, feedbacks, attempts);
     printf("> Secret locked in. Waiting for Codebreaker's guesses...\n");
 
-    while (attempts < MAX_ATTEMPTS) {
+    while (attempts<MAX_ATTEMPTS) {
         char guess[10];
         memset(guess, 0, sizeof(guess));     
-        int n = recv(sock, guess, sizeof(guess)-1, 0);
-        if (n <= 0) {
+        int n=recv(sock, guess, sizeof(guess)-1, 0);
+        if (n<=0) {
             log_event("Connection lost while waiting for guess.");
             display_disconnection_error();
             return;
         }
         log_event("Received guess from Codebreaker: %s", guess);
 
+        char auto_fb[10];
+        memset(auto_fb, 0, sizeof(auto_fb));
+        get_feedback(secret, guess, auto_fb);
+
+        char fb_input[100];
         char feedback[10];
-        memset(feedback, 0, sizeof(feedback));
-        get_feedback(secret, guess, feedback);
+        while (1) {
+            printf("> Codebreaker guessed %s. Press Enter to send feedback [%s] (or type 5-char feedback): ", guess, auto_fb);
+            if (fgets(fb_input, sizeof(fb_input), stdin)!=NULL) {
+                fb_input[strcspn(fb_input, "\n")]='\0';
+                if (strlen(fb_input)==0) {
+                    strcpy(feedback, auto_fb);
+                }
+                else {
+                    strncpy(feedback, fb_input, 9);
+                    feedback[9]='\0';
+                }
+                if (validate_feedback(feedback)) break;
+                printf("> Invalid feedback. Must be 5 characters using only 'o', 'x', '-'.\n");
+            }
+        }
         
-        if (send(sock, feedback, strlen(feedback), 0) < 0) {
+        if (send(sock, feedback, strlen(feedback), 0)<0) {
             log_event("Connection lost while sending feedback.");
             display_disconnection_error();
             return;
@@ -133,71 +151,86 @@ void play_mastermind(int sock) {
 
         print_mastermind_board(secret, guesses, feedbacks, attempts);
 
-        if (strcmp(feedback, "xxxxx") == 0) {
+        if (strcmp(feedback, "xxxxx")==0) {
             printf("> Codebreaker broke your sequence! Game Over.\n");
             break;
         }
-        else if (attempts == MAX_ATTEMPTS) {
-             printf("> Codebreaker ran out of attempts! You win.\n");
-             break;
+        else if (attempts==MAX_ATTEMPTS) {
+            printf("> Codebreaker ran out of attempts! You win.\n");
+            break;
         }
         else printf("> Waiting for Codebreaker's next guess...\n");
     }
-    sleep(4); 
+
+    if (send(sock, secret, 5, 0)>=0) log_event("Sent master sequence to Codebreaker at game end: %s", secret);
+
+    printf("> Press Enter to go home...");
+    char dummy[10];
+    fgets(dummy, sizeof(dummy), stdin);
 }
 
 void play_codebreaker(int sock) {
     char guesses[MAX_ATTEMPTS][10];
     char feedbacks[MAX_ATTEMPTS][10];
-    int attempts = 0;
+    char revealed_secret[10]={0};
+    int attempts=0;
 
-    printf("\033[2J\033[H");
-    printf("> Waiting for Mastermind to lock in a sequence...\n");
+    print_codebreaker_board(NULL, guesses, feedbacks, attempts);
     
-    while (attempts < MAX_ATTEMPTS) {
+    while (attempts<MAX_ATTEMPTS) {
         char guess[100];
-        print_codebreaker_board(guesses, feedbacks, attempts);
         printf("> Enter your 5-digit guess: ");
         
-        if (fgets(guess, sizeof(guess), stdin) != NULL) {
-            guess[strcspn(guess, "\n")] = '\0';
+        if (fgets(guess, sizeof(guess), stdin)!=NULL) {
+            guess[strcspn(guess, "\n")]='\0';
             if (!validate_sequence(guess)) {
                 printf("> Invalid sequence. Must be exactly 5 digits.\n");
-                sleep(1);
                 continue;
             }
 
-            if (send(sock, guess, strlen(guess), 0) < 0) {
-                 log_event("Connection lost while sending guess.");
-                 display_disconnection_error();
-                 return;
+            if (send(sock, guess, strlen(guess), 0)<0) {
+                log_event("Connection lost while sending guess.");
+                display_disconnection_error();
+                return;
             }
             log_event("Sent guess to Mastermind: %s", guess);
             
+            printf("> Waiting for Mastermind's feedback...\n");
             char feedback[10];
             memset(feedback, 0, sizeof(feedback));
-            int n = recv(sock, feedback, sizeof(feedback)-1, 0);
-            if (n <= 0) {
+            int n=recv(sock, feedback, 5, 0);
+            if (n<=0) {
                 log_event("Connection lost while waiting for feedback.");
                 display_disconnection_error();
                 return;
             }
+            feedback[n]='\0';
             log_event("Received feedback from Mastermind: %s", feedback);
+
+            if (!validate_feedback(feedback)) log_event("Received malformed feedback from Mastermind: %s", feedback);
 
             strcpy(guesses[attempts], guess);
             strcpy(feedbacks[attempts], feedback);
             attempts++;
 
-            print_codebreaker_board(guesses, feedbacks, attempts);
+            print_codebreaker_board(NULL, guesses, feedbacks, attempts);
 
-            if (strcmp(feedback, "xxxxx") == 0) {
-                printf("> You broke the code! Game Over.\n");
+            if (strcmp(feedback, "xxxxx")==0 || attempts==MAX_ATTEMPTS) {
+                int m=recv(sock, revealed_secret, 5, 0);
+                if (m>0) {
+                    revealed_secret[m]='\0';
+                    log_event("Received master sequence from Mastermind: %s", revealed_secret);
+                    print_codebreaker_board(revealed_secret, guesses, feedbacks, attempts);
+                }
+                if (strcmp(feedback, "xxxxx")==0) printf("> You broke the code! Game Over.\n");
+                else printf("> Out of attempts! Game Over.\n");
+
                 break;
-            } else if (attempts == MAX_ATTEMPTS) {
-                 printf("> Out of attempts! Game Over.\n");
-                 break;
             }
         }
     }
-    sleep(4); 
+
+    printf("> Press Enter to go home...");
+    char dummy[10];
+    fgets(dummy, sizeof(dummy), stdin);
 }

@@ -16,25 +16,31 @@ static void print_colored_feedback(const char *feedback) {
 void print_mastermind_board(const char *secret, const char guesses[][10], const char feedbacks[][10], int attempts) {
     printf("\033[2J\033[H");
     printf("=== MASTERMIND BOARD ===\n");
-    printf("Secret Sequence: %s\n", secret);
-    printf("------------------------\n");
-    for (int i = 0; i < attempts; i++) {
-        printf("Attempt %2d: %s | Feedback: ", i + 1, guesses[i]);
-        print_colored_feedback(feedbacks[i]);
-        printf("\n");
+    for (int i=0; i<MAX_ATTEMPTS; i++) {
+        if (i<attempts) {
+            printf("%s ", guesses[i]);
+            print_colored_feedback(feedbacks[i]);
+            printf("\n");
+        }
+        else printf("*****\n");
     }
+    printf("\n%s\n", secret);
     printf("------------------------\n");
 }
 
-void print_codebreaker_board(const char guesses[][10], const char feedbacks[][10], int attempts) {
+void print_codebreaker_board(const char *revealed_secret, const char guesses[][10], const char feedbacks[][10], int attempts) {
     printf("\033[2J\033[H");
     printf("=== CODEBREAKER BOARD ===\n");
-    printf("-------------------------\n");
-    for (int i = 0; i < attempts; i++) {
-        printf("Attempt %2d: %s | Feedback: ", i + 1, guesses[i]);
-        print_colored_feedback(feedbacks[i]);
-        printf("\n");
+    for (int i=0; i<MAX_ATTEMPTS; i++) {
+        if (i<attempts) {
+            printf("%s ", guesses[i]);
+            print_colored_feedback(feedbacks[i]);
+            printf("\n");
+        }
+        else printf("*****\n");
     }
+    if (revealed_secret!=NULL && strlen(revealed_secret)==5) printf("\n%s\n", revealed_secret);
+    else printf("\n*****\n");
     printf("-------------------------\n");
 }
 
