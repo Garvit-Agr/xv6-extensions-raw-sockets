@@ -68,6 +68,8 @@ void receive_broadcasts(int sockfd, Player players[], int *player_count, int *ma
     ssize_t n=recvfrom(sockfd, buffer, sizeof(buffer)-1, 0, (struct sockaddr *)&sender_addr, &sender_len);
     
     if (n>0) {
+        if (strncmp(buffer, MAGIC_PACKET, strlen(MAGIC_PACKET))!=0) return;
+
         buffer[n]='\0';
         
         char *magic=strtok(buffer, "|");

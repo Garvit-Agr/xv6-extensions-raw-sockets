@@ -7,7 +7,6 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#include "engine.h"
 #include "discovery.h"
 #include "protocol_tcp.h"
 #include "protocol_udp.h"

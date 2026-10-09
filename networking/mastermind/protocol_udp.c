@@ -62,8 +62,8 @@ static int send_udp_chunked(int sock, const char *msg, struct sockaddr_in *dest)
             struct sockaddr_in from_addr;
             socklen_t from_len=sizeof(from_addr);
             
-            ssize_t n=recvfrom(sock, &recv_chunk, sizeof(recv_chunk), 0, (struct sockaddr *)&from_addr, &from_len);
-            if (n>0 && recv_chunk.is_ack && recv_chunk.seq_num<total_chunks && !acked[recv_chunk.seq_num]) {
+            ssize_t n=recvfrom(sock, &recv_chunk, sizeof(recv_chunk), 0, (struct sockaddr *)&from_addr, &from_len);       
+            if (n>0 && recv_chunk.is_ack && recv_chunk.seq_num>=0 && recv_chunk.seq_num<total_chunks && !acked[recv_chunk.seq_num]) {
                 acked[recv_chunk.seq_num]=1;
                 chunks_acked++;
                 log_event("Received ACK for chunk %d/%d", recv_chunk.seq_num+1, total_chunks);
@@ -90,6 +90,7 @@ static int recv_udp_chunked(int sock, char *buffer, int max_len, struct sockaddr
         UdpChunk chunk;
         ssize_t n=recvfrom(sock, &chunk, sizeof(chunk), 0, (struct sockaddr *)src, &src_len);
         if (n<=0) return -1;
+        if (strncmp((char*)&chunk, MAGIC_PACKET, strlen(MAGIC_PACKET))==0) continue;
 
         if (chunk.is_ack) continue; 
 
@@ -105,7 +106,7 @@ static int recv_udp_chunked(int sock, char *buffer, int max_len, struct sockaddr
             first_packet_received=1;
         }
         
-        if (chunk.seq_num < 256 && !chunk_received[chunk.seq_num]) {
+        if (chunk.seq_num>=0 && chunk.seq_num<256 && !chunk_received[chunk.seq_num]) {
             chunk_received[chunk.seq_num]=1;
             chunk_buffer[chunk.seq_num]=chunk;
             
