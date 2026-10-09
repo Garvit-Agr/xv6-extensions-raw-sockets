@@ -6,11 +6,129 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <poll.h>
+#include <time.h>
 
 #include "protocol_udp.h"
 #include "engine.h"
 #include "ui.h"
 #include "logger.h"
+
+static int send_udp_chunked(int sock, const char *msg, struct sockaddr_in *dest) {
+    int len=strlen(msg);
+    int total_chunks=(len+CHUNK_SIZE-1)/CHUNK_SIZE;
+    if (total_chunks==0) total_chunks=1; 
+
+    int acked[256]={0}; 
+    struct timespec last_sent[256];
+    memset(last_sent, 0, sizeof(last_sent));
+    int chunks_acked=0;
+    
+    while (chunks_acked<total_chunks) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        
+        for (int i=0; i<total_chunks; i++) {
+            if (!acked[i]) {
+                long elapsed_ms=0;
+                if (last_sent[i].tv_sec!=0) {
+                    elapsed_ms=(now.tv_sec-last_sent[i].tv_sec)*1000 + (now.tv_nsec-last_sent[i].tv_nsec)/1000000;
+                }
+                
+                if (last_sent[i].tv_sec==0 || elapsed_ms>=100) {
+                    UdpChunk chunk;
+                    memset(&chunk, 0, sizeof(chunk));
+                    chunk.seq_num=i;
+                    chunk.total_chunks=total_chunks;
+                    chunk.is_ack=0;
+                    
+                    int copy_len=CHUNK_SIZE;
+                    if (i==total_chunks-1 && len%CHUNK_SIZE!=0) copy_len=len % CHUNK_SIZE;
+                    
+                    memcpy(chunk.data, msg+(i*CHUNK_SIZE), copy_len);
+
+                    sendto(sock, &chunk, sizeof(chunk), 0, (struct sockaddr *)dest, sizeof(*dest));
+                    
+                    if (last_sent[i].tv_sec==0) log_event("Sent UDP chunk %d/%d", i+1, total_chunks);
+                    else log_event("Retransmitted UDP chunk %d/%d (No ACK received within 0.1s)", i+1, total_chunks);
+
+                    last_sent[i]=now;
+                }
+            }
+        }
+        
+        struct pollfd pfd={sock, POLLIN, 0};
+        if (poll(&pfd, 1, 10)>0) {
+            UdpChunk recv_chunk;
+            struct sockaddr_in from_addr;
+            socklen_t from_len=sizeof(from_addr);
+            
+            ssize_t n=recvfrom(sock, &recv_chunk, sizeof(recv_chunk), 0, (struct sockaddr *)&from_addr, &from_len);
+            if (n>0 && recv_chunk.is_ack && recv_chunk.seq_num<total_chunks && !acked[recv_chunk.seq_num]) {
+                acked[recv_chunk.seq_num]=1;
+                chunks_acked++;
+                log_event("Received ACK for chunk %d/%d", recv_chunk.seq_num+1, total_chunks);
+            }
+        }
+    }
+    return 0;
+}
+
+static int recv_udp_chunked(int sock, char *buffer, int max_len, struct sockaddr_in *src) {
+    memset(buffer, 0, max_len);
+    int received_chunks=0;
+    int expected_chunks=1;
+    int first_packet_received=0;
+    socklen_t src_len=sizeof(*src);
+    
+    UdpChunk chunk_buffer[256];
+    int chunk_received[256]={0};
+
+    while (received_chunks<expected_chunks) {
+        struct pollfd pfd={sock, POLLIN, 0};
+        if (poll(&pfd, 1, 30000)<=0) return -1;
+        
+        UdpChunk chunk;
+        ssize_t n=recvfrom(sock, &chunk, sizeof(chunk), 0, (struct sockaddr *)src, &src_len);
+        if (n<=0) return -1;
+
+        if (chunk.is_ack) continue; 
+
+        UdpChunk ack;
+        memset(&ack, 0, sizeof(ack));
+        ack.seq_num=chunk.seq_num;
+        ack.is_ack=1;
+        sendto(sock, &ack, sizeof(ack), 0, (struct sockaddr *)src, src_len);
+        log_event("Sent ACK for chunk %d/%d", chunk.seq_num+1, chunk.total_chunks);
+
+        if (!first_packet_received) {
+            expected_chunks=chunk.total_chunks;
+            first_packet_received=1;
+        }
+        
+        if (chunk.seq_num < 256 && !chunk_received[chunk.seq_num]) {
+            chunk_received[chunk.seq_num]=1;
+            chunk_buffer[chunk.seq_num]=chunk;
+            
+            log_event("Buffered incoming UDP chunk %d/%d", chunk.seq_num+1, chunk.total_chunks);
+            received_chunks++;
+        }
+    }
+    
+    int current_offset = 0;
+    for (int i=0; i<expected_chunks; i++) {
+        if (chunk_received[i]) {
+            int copy_len=CHUNK_SIZE;
+            if (current_offset + copy_len > max_len - 1) {
+                copy_len = max_len - 1 - current_offset;
+            }
+            memcpy(buffer + current_offset, chunk_buffer[i].data, copy_len);
+            current_offset += copy_len;
+        }
+    }
+    
+    log_event("Aggregated and reordered %d UDP chunks into contiguous string.", expected_chunks);
+    return 1;
+}
 
 int init_udp_game_socket(int port) {
     int sockfd=socket(AF_INET, SOCK_DGRAM, 0);
@@ -38,19 +156,13 @@ int init_udp_game_socket(int port) {
 }
 
 int accept_udp_challenge(int udp_sock, char *challenger_name, struct sockaddr_in *challenger_addr) {
-    socklen_t addr_len=sizeof(*challenger_addr);
-    memset(challenger_name, 0, 50);
-
-    ssize_t n=recvfrom(udp_sock, challenger_name, 49, 0, (struct sockaddr *)challenger_addr, &addr_len);
-    if (n<=0) return -1;
-    challenger_name[n]='\0';
-
+    if (recv_udp_chunked(udp_sock, challenger_name, 50, challenger_addr)<0) return -1;
     log_event("Received UDP challenge request from %s", challenger_name);
     return 0;
 }
 
 void send_udp_challenge_response(int udp_sock, struct sockaddr_in *peer_addr, const char *response) {
-    sendto(udp_sock, response, strlen(response), 0, (struct sockaddr *)peer_addr, sizeof(*peer_addr));
+    send_udp_chunked(udp_sock, response, peer_addr);
     log_event("Sent UDP challenge response: %s", response);
 }
 
@@ -60,22 +172,14 @@ int send_udp_challenge(int udp_sock, Player *p, const char *my_name, struct sock
     target_addr->sin_port=htons(p->port);
     inet_pton(AF_INET, p->ip_addr, &target_addr->sin_addr);
 
-    sendto(udp_sock, my_name, strlen(my_name), 0, (struct sockaddr *)target_addr, sizeof(*target_addr));
+    send_udp_chunked(udp_sock, my_name, target_addr);
     log_event("Sent UDP challenge request to %s (%s:%d)", p->name, p->ip_addr, p->port);
 
-    struct pollfd pfd={udp_sock, POLLIN, 0};
-    if (poll(&pfd, 1, 10000)<=0) {
+    char response[16];
+    if (recv_udp_chunked(udp_sock, response, sizeof(response), target_addr) < 0) {
         log_event("UDP challenge request to %s timed out.", p->name);
         return -1;
     }
-
-    char response[16];
-    memset(response, 0, sizeof(response));
-    struct sockaddr_in from_addr;
-    socklen_t from_len=sizeof(from_addr);
-    ssize_t n=recvfrom(udp_sock, response, sizeof(response) - 1, 0, (struct sockaddr *)&from_addr, &from_len);
-    if (n<=0) return -1;
-    response[n]='\0';
 
     log_event("Received UDP challenge response from %s: %s", p->name, response);
     if (strcmp(response, "yes")==0) {
@@ -106,17 +210,12 @@ void play_mastermind_udp(int udp_sock, struct sockaddr_in *peer_addr, const char
 
     while (attempts<MAX_ATTEMPTS) {
         char guess[10];
-        memset(guess, 0, sizeof(guess));
-        struct sockaddr_in from_addr;
-        socklen_t from_len=sizeof(from_addr);
-
-        ssize_t n=recvfrom(udp_sock, guess, sizeof(guess) - 1, 0, (struct sockaddr *)&from_addr, &from_len);
-        if (n<=0) {
+        
+        if (recv_udp_chunked(udp_sock, guess, sizeof(guess), peer_addr) < 0) {
             log_event("UDP connection lost while waiting for guess from %s.", opponent_name);
             display_disconnection_error(opponent_name);
             return;
         }
-        guess[n]='\0';
         log_event("Received UDP guess from Codebreaker (%s): %s", opponent_name, guess);
 
         char auto_fb[10];
@@ -140,7 +239,7 @@ void play_mastermind_udp(int udp_sock, struct sockaddr_in *peer_addr, const char
             }
         }
 
-        if (sendto(udp_sock, feedback, strlen(feedback), 0, (struct sockaddr *)peer_addr, sizeof(*peer_addr))<0) {
+        if (send_udp_chunked(udp_sock, feedback, peer_addr) < 0) {
             log_event("UDP send error while sending feedback to %s.", opponent_name);
             display_disconnection_error(opponent_name);
             return;
@@ -164,7 +263,7 @@ void play_mastermind_udp(int udp_sock, struct sockaddr_in *peer_addr, const char
         }
     }
 
-    sendto(udp_sock, secret, 5, 0, (struct sockaddr *)peer_addr, sizeof(*peer_addr));
+    send_udp_chunked(udp_sock, secret, peer_addr);
     log_event("Sent UDP master sequence to Codebreaker (%s) at game end: %s", opponent_name, secret);
 
     printf("> Press Enter to go home...");
@@ -191,7 +290,7 @@ void play_codebreaker_udp(int udp_sock, struct sockaddr_in *peer_addr, const cha
                 continue;
             }
 
-            if (sendto(udp_sock, guess, strlen(guess), 0, (struct sockaddr *)peer_addr, sizeof(*peer_addr))<0) {
+            if (send_udp_chunked(udp_sock, guess, peer_addr)<0) {
                 log_event("UDP error while sending guess to %s.", opponent_name);
                 display_disconnection_error(opponent_name);
                 return;
@@ -200,16 +299,12 @@ void play_codebreaker_udp(int udp_sock, struct sockaddr_in *peer_addr, const cha
 
             printf("> Waiting for Mastermind's feedback...\n");
             char feedback[10];
-            memset(feedback, 0, sizeof(feedback));
-            struct sockaddr_in from_addr;
-            socklen_t from_len=sizeof(from_addr);
-            ssize_t n=recvfrom(udp_sock, feedback, 5, 0, (struct sockaddr *)&from_addr, &from_len);
-            if (n<=0) {
+            
+            if (recv_udp_chunked(udp_sock, feedback, sizeof(feedback), peer_addr) < 0) {
                 log_event("UDP connection lost while waiting for feedback from %s.", opponent_name);
                 display_disconnection_error(opponent_name);
                 return;
             }
-            feedback[n]='\0';
             log_event("Received UDP feedback from Mastermind (%s): %s", opponent_name, feedback);
 
             if (!validate_feedback(feedback)) {
@@ -223,13 +318,11 @@ void play_codebreaker_udp(int udp_sock, struct sockaddr_in *peer_addr, const cha
             print_codebreaker_board(NULL, guesses, feedbacks, attempts);
 
             if (strcmp(feedback, "xxxxx")==0 || attempts==MAX_ATTEMPTS) {
-                ssize_t m=recvfrom(udp_sock, revealed_secret, 5, 0, (struct sockaddr *)&from_addr, &from_len);
-                if (m<=0) {
+                if (recv_udp_chunked(udp_sock, revealed_secret, sizeof(revealed_secret), peer_addr) < 0) {
                     log_event("UDP connection lost while receiving master sequence from %s.", opponent_name);
                     display_disconnection_error(opponent_name);
                     return;
                 }
-                revealed_secret[m]='\0';
                 log_event("Received UDP master sequence from Mastermind (%s): %s", opponent_name, revealed_secret);
                 print_codebreaker_board(revealed_secret, guesses, feedbacks, attempts);
 

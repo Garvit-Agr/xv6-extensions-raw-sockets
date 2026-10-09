@@ -4,6 +4,15 @@
 #include <netinet/in.h>
 #include "discovery.h"
 
+#define CHUNK_SIZE 4
+
+typedef struct {
+    int seq_num;
+    int total_chunks;
+    int is_ack;
+    char data[CHUNK_SIZE];
+} UdpChunk;
+
 int init_udp_game_socket(int port);
 int accept_udp_challenge(int udp_sock, char *challenger_name, struct sockaddr_in *challenger_addr);
 int send_udp_challenge(int udp_sock, Player *p, const char *my_name, struct sockaddr_in *target_addr);
