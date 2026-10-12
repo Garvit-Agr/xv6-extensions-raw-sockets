@@ -10,5 +10,6 @@ tempest: $(SRCS)
 
 clean:
 	rm -f tempest
+	rm -rf tempest.dSYM
 
 .PHONY: clean
