@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <poll.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 
@@ -13,18 +14,21 @@
 #include "logger.h"
 
 int main(int argc, char *argv[]) {
+    signal(SIGPIPE, SIG_IGN);
+
     bool enable_logging = false;
     bool cost_cutting=false;
+    int listening_port=8080;
 
     for (int i=1; i<argc; i++) {
         if (strcmp(argv[i], "--log") == 0) enable_logging=true;
         else if (strcmp(argv[i], "--cost-cutting") == 0) cost_cutting=true;
+        else if (atoi(argv[i]) > 0) listening_port=atoi(argv[i]);
     }
     init_logger(enable_logging);
     log_event("Application initialized. Logging: %d, Cost-Cutting (UDP): %d", enable_logging, cost_cutting);
 
     char player_name[50];
-    int listening_port=8080;
 
     printf("Enter your name: ");
     if (fgets(player_name, sizeof(player_name), stdin)!=NULL) {
@@ -41,25 +45,7 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in pending_udp_addr;
     char pending_challenger_name[50]={0};
     int max_known_id=0;
-    int my_id=0;
-
-    log_event("Starting 2.5s network discovery phase...");
-    
-    struct timespec init_start, init_now;
-    clock_gettime(CLOCK_MONOTONIC, &init_start);
-    struct pollfd init_pfd={bcast_sock, POLLIN, 0};
-    
-    while (1) {
-        clock_gettime(CLOCK_MONOTONIC, &init_now);
-        long elapsed=(init_now.tv_sec-init_start.tv_sec)*1000 + (init_now.tv_nsec-init_start.tv_nsec)/1000000;
-        if (elapsed>=2500) break;
-        
-        if (poll(&init_pfd, 1, 2500-elapsed)>0) {
-            receive_broadcasts(bcast_sock, players, &player_count, &max_known_id, 0);
-        }
-    }
-    my_id=max_known_id+1;
-    log_event("Discovery complete. Self-assigned ID: %d", my_id);
+    int my_id=(int)getpid();
     
     struct timespec last_bcast;
     clock_gettime(CLOCK_MONOTONIC, &last_bcast);
@@ -160,21 +146,16 @@ int main(int argc, char *argv[]) {
                         needs_redraw=1;
                     } else if (strncmp(input, "challenge ", 10)==0) {
                         int target_id=atoi(input+10);
+                        Player *target=NULL;
                         
-                        if (target_id == my_id) {
-                            printf("\n> You cannot challenge yourself.\n");
-                            sleep(1);
-                        } else {
-                            Player *target=NULL;
-                            
-                            for (int i=0; i<player_count; i++) {
-                                if (players[i].active && players[i].id==target_id) {
-                                    target=&players[i];
-                                    break;
-                                }
+                        for (int i=0; i<player_count; i++) {
+                            if (players[i].active && players[i].id==target_id) {
+                                target=&players[i];
+                                break;
                             }
-                            
-                            if (target) {
+                        }
+                        
+                        if (target) {
                                 if (cost_cutting) {
                                     struct sockaddr_in target_addr;
                                     if (send_udp_challenge(game_listen_sock, target, player_name, &target_addr) == 0) {
@@ -206,7 +187,6 @@ int main(int argc, char *argv[]) {
                                 printf("\n> Invalid player ID.\n");
                                 sleep(1);
                             }
-                        }
                         needs_redraw=1;
                     }
                 }

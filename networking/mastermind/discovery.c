@@ -97,15 +97,14 @@ void receive_broadcasts(int sockfd, Player players[], int *player_count, int *ma
                 if (strcmp(players[i].ip_addr, ip)==0 && players[i].port==port) {
                     players[i].last_seen=now;
                     strcpy(players[i].name, name);
-                    players[i].id=remote_id;
                     if (!players[i].active) players[i].active=1;
                     found=1;
                     break;
                 }
             }
 
-            if (!found && *player_count<MAX_PLAYERS && remote_id>0) {
-                players[*player_count].id=remote_id;
+            if (!found && *player_count<MAX_PLAYERS) {
+                players[*player_count].id=(*player_count)+1;
                 strcpy(players[*player_count].name, name);
                 strcpy(players[*player_count].ip_addr, ip);
                 players[*player_count].port=port;
@@ -121,15 +120,19 @@ void cleanup_stale_players(Player players[], int *player_count) {
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     
+    int new_count=0;
     for (int i=0; i<*player_count; i++) {
-        if (players[i].active) {
-            long elapsed_sec=now.tv_sec-players[i].last_seen.tv_sec;
-            if (elapsed_sec>=5) {
-                players[i].active=0;
-                log_event("Player %s (ID: %d) timed out after %ld seconds of inactivity.", players[i].name, players[i].id, elapsed_sec);
-            }
+        long elapsed_sec=now.tv_sec-players[i].last_seen.tv_sec;
+        if (players[i].active && elapsed_sec<5) {
+            players[new_count]=players[i];
+            players[new_count].id=new_count+1;
+            new_count++;
+        }
+        else if (players[i].active) {
+            log_event("Player %s (ID: %d) timed out after %ld seconds of inactivity.", players[i].name, players[i].id, elapsed_sec);
         }
     }
+    *player_count=new_count;
 }
 
 void print_players(Player players[], int player_count) {

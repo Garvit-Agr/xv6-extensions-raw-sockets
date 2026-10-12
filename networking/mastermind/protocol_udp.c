@@ -22,6 +22,7 @@ static int send_udp_chunked(int sock, const char *msg, struct sockaddr_in *dest)
     struct timespec last_sent[256];
     memset(last_sent, 0, sizeof(last_sent));
     int chunks_acked=0;
+    int retries=0;
     
     while (chunks_acked<total_chunks) {
         struct timespec now;
@@ -35,6 +36,14 @@ static int send_udp_chunked(int sock, const char *msg, struct sockaddr_in *dest)
                 }
                 
                 if (last_sent[i].tv_sec==0 || elapsed_ms>=100) {
+                    if (last_sent[i].tv_sec!=0) {
+                        retries++;
+                        if (retries>50) {
+                            log_event("Exceeded max retries (50) in UDP send. Connection assumed lost.");
+                            return -1;
+                        }
+                    }
+
                     UdpChunk chunk;
                     memset(&chunk, 0, sizeof(chunk));
                     chunk.seq_num=i;
@@ -212,8 +221,8 @@ void play_mastermind_udp(int udp_sock, struct sockaddr_in *peer_addr, const char
     while (attempts<MAX_ATTEMPTS) {
         char guess[10];
         
-        if (recv_udp_chunked(udp_sock, guess, sizeof(guess), peer_addr) < 0) {
-            log_event("UDP connection lost while waiting for guess from %s.", opponent_name);
+        if (recv_udp_chunked(udp_sock, guess, sizeof(guess), peer_addr)<0 || !validate_sequence(guess)) {
+            log_event("UDP connection lost or invalid guess from %s.", opponent_name);
             display_disconnection_error(opponent_name);
             return;
         }
