@@ -6,6 +6,8 @@
 #include <netdb.h>
 #include <poll.h>
 #include <time.h>
+#include <fcntl.h>
+#include <errno.h>
 
 #include "net_socket.h"
 #include "cli.h"
@@ -29,10 +31,31 @@ int connect_to_host(const char *hostname, const char *port) {
     for (p=res;p!=NULL;p=p->ai_next) {
         if ((sockfd=socket(p->ai_family, p->ai_socktype, p->ai_protocol))==-1) continue;
 
-        if (connect(sockfd, p->ai_addr, p->ai_addrlen)==-1) {
+        int flags=fcntl(sockfd, F_GETFL, 0);
+        fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+
+        int ret=connect(sockfd, p->ai_addr, p->ai_addrlen);
+        if (ret==-1 && errno==EINPROGRESS) {
+            struct pollfd pfd={sockfd, POLLOUT, 0};
+            int poll_ret=poll(&pfd, 1, 10000);
+            if (poll_ret==0) die("tempest: request timed out");
+            if (poll_ret<0) {
+                close(sockfd);
+                continue;
+            }
+            int err=0;
+            socklen_t errlen=sizeof(err);
+            if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &err, &errlen)<0 || err!=0) {
+                close(sockfd);
+                continue;
+            }
+        }
+        else if (ret==-1) {
             close(sockfd);
             continue;
         }
+
+        fcntl(sockfd, F_SETFL, flags);
         break;
     }
 
