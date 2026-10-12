@@ -64,9 +64,8 @@ void parse_http_response(const char *response, bool raw_output) {
     const char *body=strstr(response, "\r\n\r\n");
     if (!body) die("tempest: invalid http response format");
     
-    if (strncmp(response, "HTTP/1.1 404", 12)==0 || strncmp(response, "HTTP/1.0 404", 12)==0) {
-        die("tempest: invalid location");
-    }
+    if (strncmp(response, "HTTP/1.1 200", 12)!=0 && strncmp(response, "HTTP/1.0 200", 12)!=0) die("tempest: invalid location");
+    if (strstr(response, "location not found")!=NULL) die("tempest: invalid location");
 
     if (raw_output) {
         const char *curr=response;

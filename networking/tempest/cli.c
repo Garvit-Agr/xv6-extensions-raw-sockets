@@ -15,6 +15,7 @@ TempestConfig parse_arguments(int argc, char *argv[]) {
   if (argc>3) die("tempest: too many arguments");
 
   config.city_name=argv[1];
+  if (strlen(config.city_name)==0 || strcmp(config.city_name, "--raw")==0) die("tempest: invalid location");
 
   if (argc==3) {
     if (strcmp(argv[2], "--raw")==0) config.raw_output=true;
