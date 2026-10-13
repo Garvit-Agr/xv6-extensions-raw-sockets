@@ -23,9 +23,18 @@ struct {
   struct run *freelist;
 } kmem;
 
+#define PA2IDX(pa) (((uint64)(pa)-KERNBASE) / PGSIZE)
+
+struct {
+  struct spinlock lock;
+  int count[(PHYSTOP - KERNBASE) / PGSIZE];
+} pageref;
+
 void
 kinit()
 {
+  initlock(&pageref.lock, "pageref");
+  for (int i = 0; i < (PHYSTOP - KERNBASE) / PGSIZE; i++) pageref.count[i] = 1;
   initlock(&kmem.lock, "kmem");
   freerange(end, (void *)PHYSTOP);
 }
@@ -52,6 +61,16 @@ kfree(void *pa)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
+  acquire(&pageref.lock);
+  if (pageref.count[PA2IDX(pa)]<=0) panic("kfree: refcount");
+
+  pageref.count[PA2IDX(pa)]--;
+  if (pageref.count[PA2IDX(pa)]>0) {
+    release(&pageref.lock);
+    return;
+  }
+  release(&pageref.lock);
+
   memset(pa, 1, PGSIZE);
 
   r = (struct run *)pa;
@@ -76,7 +95,25 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if (r)
+  if (r) {
     memset((char *)r, 5, PGSIZE); // fill with junk
+    acquire(&pageref.lock);
+    pageref.count[PA2IDX(r)] = 1;
+    release(&pageref.lock);
+  }
   return (void *)r;
+}
+
+void ref_inc(void *pa) {
+  acquire(&pageref.lock);
+  pageref.count[PA2IDX(pa)]++;
+  release(&pageref.lock);
+}
+
+int ref_get(void *pa) {
+  int cnt;
+  acquire(&pageref.lock);
+  cnt = pageref.count[PA2IDX(pa)];
+  release(&pageref.lock);
+  return cnt;
 }
