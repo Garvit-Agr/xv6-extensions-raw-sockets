@@ -117,7 +117,16 @@ sys_uptime(void)
 uint64
 sys_sigalarm(void)
 {
-  return -1;
+  int ticks;
+  uint64 handler;
+  struct proc *p=myproc();
+
+  argint(0, &ticks);
+  argaddr(1, &handler);
+  p->alarm_ticks=ticks;
+  p->alarm_handler=handler;
+  p->alarm_elapsed=0;
+  return 0;
 }
 
 // TODO(mini-project 2): restore the process state saved when the alarm
