@@ -135,5 +135,9 @@ sys_sigalarm(void)
 uint64
 sys_sigreturn(void)
 {
-  return -1;
+  struct proc *p=myproc();
+  if (!p->alarm_running) return -1;
+  *p->trapframe=*p->alarm_tf;
+  p->alarm_running=0;
+  return p->trapframe->a0;
 }
