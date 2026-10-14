@@ -359,6 +359,11 @@ copyout(pagetable_t pagetable, uint64 psz, uint64 dstva, char *src, uint64 len)
     }
 
     pte = walk(pagetable, va0, 0);
+    if (pte==0) return -1;
+    if (*pte & PTE_COW) {
+      if (cowfault(pagetable, va0)<0) return -1;
+      pa0 = walkaddr(pagetable, va0);
+    }
     // forbid copyout over read-only user text pages.
     if ((*pte & PTE_W) == 0)
       return -1;
