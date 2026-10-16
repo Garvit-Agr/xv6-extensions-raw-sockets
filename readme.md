@@ -43,7 +43,7 @@ The 10-second timeout budget resets for each phase: connection, request transmis
 
 <!-- anything you took for granted that the spec did not state -->
 
-wttr.is is reachable over plain HTTP on port 80 and closes the connection once it finishes sending the response. City names fit in memory as standard strings.
+none
 
 #### Known bugs
 
@@ -61,36 +61,66 @@ mastermind [--cost-cutting] [--log]
 
 <!-- how you split the code into files, and what each file is responsible for -->
 
+The implementation is organized across seven files:
+- `discovery.c`: handles UDP peer beacon broadcasts on port 8888, self-filtering, and pruning inactive players.
+- `protocol_tcp.c`: manages TCP connection handshakes, challenge prompts, and the synchronous turn loop.
+- `protocol_udp.c`: implements chunked reliable transmission over UDP with ACKs, retransmits, and message IDs.
+- `engine.c`: validates sequence formats, checks guesses against secrets, and generates feedback scores.
+- `ui.c`: draws the game board, player tables, and disconnection notifications.
+- `logger.c`: appends timestamped protocol events to log.txt when running with --log.
+- `main.c`: handles CLI flags, sets up the poll loop, and directs user commands from stdin.
+
 #### Discovery
 
 <!-- the 4-byte magic and the broadcast payload layout; the sender's ip comes from the packet source, not the payload -->
+
+Peers broadcast UDP datagrams to port 8888 every 2 seconds using the layout MST1|<name>|<port>. The MST1 prefix drops random network noise right away. The receiving end gets the sender IP directly from the sockaddr_in structure in recvfrom, while the payload itself stays limited to the player name and listening port. To stop a node from adding itself to its own lobby, is_self compares the incoming packet IP against local interface addresses from getifaddrs alongside the listening port.
 
 #### Message verbs
 
 <!-- every verb, its payload, and when it is sent; must match your .h -->
 
+The protocol runs five message exchanges across both TCP and UDP modes:
+- Challenge request: carries the challenger's name as a string. Sent by the initiating player to propose a match.
+- Challenge response: carries "yes" or "no". Sent by the target player to accept or decline the game.
+- Guess: carries a 5-digit sequence string like "12345". Sent by the Codebreaker on each turn.
+- Feedback: carries a 5-character string of 'o', 'x', and '-' marks. Sent by the Mastermind after evaluating a guess.
+- Reveal secret: carries the 5-digit solution sequence. Sent by the Mastermind once the game concludes.
+
 #### Reliable transfer over UDP (`--cost-cutting`)
 
 <!-- the chunk struct, sequence numbering, how the total chunk count is sent, and the ack/retransmit scheme -->
+
+In cost-cutting mode, application messages travel inside UdpChunk structs over UDP. Each chunk carries an integer msg_id, a 0-indexed seq_num, total_chunks, an is_ack flag, and a 4-byte data payload. Every chunk embeds total_chunks in its header, calculated as the message length rounded up in 4-byte increments.
+
+Delivery uses selective ACKs. When receiving a data chunk, the node immediately returns an ACK chunk bearing the matching msg_id and seq_num. The sender polls for ACKs and retransmits any unacknowledged chunk if 100 milliseconds pass without confirmation. After 50 retries, it treats the peer as disconnected. The msg_id isolates chunks across separate transmissions so delayed packets never corrupt subsequent messages.
 
 #### Disconnection handling
 
 <!-- how you detect that the other player is gone -->
 
-- TCP:
-- UDP:
+- TCP: The socket read loop calls recv. When the peer closes their terminal or drops the link, recv returns zero bytes on EOF or a negative value on connection reset. The game catches this immediately and marks the match aborted.
+- UDP: For UDP, recv_udp_chunked runs a poll call with a 30-second timeout on each turn. If no chunk arrives within 30 seconds, or if send_udp_chunked exhausts 50 retries, the opponent is declared disconnected. In the discovery lobby, players that miss broadcasts for over 5 seconds are purged.
 
 #### Changed defaults
 
 <!-- defaults: broadcast every 2 s, entries expire after 5 s, retransmit after 0.1 s; write "none" if unchanged -->
 
+none
+
 #### Assumptions
 
 <!-- anything you took for granted that the spec did not state -->
 
+We assume player names never contain the pipe symbol | because we use it as the token delimiter in broadcast packets.
+
+In UDP cost-cutting mode, if an opponent takes longer than 30 seconds to submit a guess or feedback, we assume they left the game and trigger a disconnect.
+
 #### Known bugs
 
 <!-- what does not work, and when; write "none known" if there are none -->
+
+none known
 
 ## xv6
 
