@@ -37,7 +37,7 @@ Detecting an invalid location: wttr.is usually gives a 404 or 500 status line wh
 
 <!-- default: request timeout 10 s; write "none" if unchanged -->
 
-The 10-second timeout budget resets for each phase: connection, request transmission, and response reception. Each loop calculates its remaining time using clock_gettime with CLOCK_MONOTONIC and terminates with tempest: request timed out if poll expires.
+none
 
 #### Assumptions
 

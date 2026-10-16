@@ -14,7 +14,16 @@
 
 #define BUFFER_SIZE 8192
 
-int connect_to_host(const char *hostname, const char *port) {
+static long get_remaining_ms(struct timespec start) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    long elapsed_ms=(now.tv_sec-start.tv_sec)*1000+(now.tv_nsec-start.tv_nsec)/1000000;
+    long remaining_ms=10000-elapsed_ms;
+    if (remaining_ms<=0) die("tempest: request timed out");
+    return remaining_ms;
+}
+
+int connect_to_host(const char *hostname, const char *port, struct timespec start) {
     struct addrinfo hints, *res, *p;
     int sockfd=-1;
     int status;
@@ -36,8 +45,9 @@ int connect_to_host(const char *hostname, const char *port) {
 
         int ret=connect(sockfd, p->ai_addr, p->ai_addrlen);
         if (ret==-1 && errno==EINPROGRESS) {
+            long remaining_ms=get_remaining_ms(start);
             struct pollfd pfd={sockfd, POLLOUT, 0};
-            int poll_ret=poll(&pfd, 1, 10000);
+            int poll_ret=poll(&pfd, 1, remaining_ms);
             if (poll_ret==0) die("tempest: request timed out");
             if (poll_ret<0) {
                 close(sockfd);
@@ -68,24 +78,17 @@ int connect_to_host(const char *hostname, const char *port) {
     return sockfd;
 }
 
-void send_data(int sockfd, const char *data, size_t length) {
+void send_data(int sockfd, const char *data, size_t length, struct timespec start) {
     size_t total_sent=0;
     size_t bytes_left=length;
     ssize_t n;
     struct pollfd pfd;
-    struct timespec start, now;
 
     pfd.fd=sockfd;
     pfd.events=POLLOUT;
 
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
     while (total_sent<length) {
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        long elapsed_ms=(now.tv_sec-start.tv_sec)*1000+(now.tv_nsec-start.tv_nsec)/1000000;
-        long remaining_ms=10000-elapsed_ms;
-
-        if (remaining_ms<=0) die("tempest: request timed out");
+        long remaining_ms=get_remaining_ms(start);
 
         int ret=poll(&pfd, 1, remaining_ms);
         
@@ -106,7 +109,7 @@ void close_socket(int sockfd) {
     close(sockfd);
 }
 
-char *receive_data(int sockfd) {
+char *receive_data(int sockfd, struct timespec start) {
     size_t capacity=BUFFER_SIZE;
     char *buffer=malloc(capacity);
     if (!buffer) die("tempest: malloc failed");
@@ -114,19 +117,12 @@ char *receive_data(int sockfd) {
     size_t total_received=0;
     ssize_t bytes_read;
     struct pollfd pfd;
-    struct timespec start, now;
 
     pfd.fd=sockfd;
     pfd.events=POLLIN;
 
-    clock_gettime(CLOCK_MONOTONIC, &start);
-
     while (1) {
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        long elapsed_ms=(now.tv_sec-start.tv_sec)*1000+(now.tv_nsec-start.tv_nsec)/1000000;
-        long remaining_ms=10000-elapsed_ms;
-
-        if (remaining_ms<=0) die("tempest: request timed out");
+        long remaining_ms=get_remaining_ms(start);
 
         int ret=poll(&pfd, 1, remaining_ms);
         
