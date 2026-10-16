@@ -123,6 +123,7 @@ sys_sigalarm(void)
 
   argint(0, &ticks);
   argaddr(1, &handler);
+  if (ticks<0) return -1;
   p->alarm_ticks=ticks;
   p->alarm_handler=handler;
   p->alarm_elapsed=0;
