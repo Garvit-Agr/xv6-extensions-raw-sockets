@@ -7,6 +7,7 @@
 #define CHUNK_SIZE 4
 
 typedef struct {
+    int msg_id;
     int seq_num;
     int total_chunks;
     int is_ack;

@@ -13,28 +13,31 @@
 #include "ui.h"
 #include "logger.h"
 
+static int tx_msg_counter=1;
+
 static int send_udp_chunked(int sock, const char *msg, struct sockaddr_in *dest) {
     int len=strlen(msg);
     int total_chunks=(len+CHUNK_SIZE-1)/CHUNK_SIZE;
-    if (total_chunks==0) total_chunks=1; 
+    if (total_chunks==0) total_chunks=1;
 
-    int acked[256]={0}; 
+    int current_msg_id=tx_msg_counter++;
+    int acked[256]={0};
     struct timespec last_sent[256];
     memset(last_sent, 0, sizeof(last_sent));
     int chunks_acked=0;
     int retries=0;
-    
+
     while (chunks_acked<total_chunks) {
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
-        
+
         for (int i=0; i<total_chunks; i++) {
             if (!acked[i]) {
                 long elapsed_ms=0;
                 if (last_sent[i].tv_sec!=0) {
                     elapsed_ms=(now.tv_sec-last_sent[i].tv_sec)*1000 + (now.tv_nsec-last_sent[i].tv_nsec)/1000000;
                 }
-                
+
                 if (last_sent[i].tv_sec==0 || elapsed_ms>=100) {
                     if (last_sent[i].tv_sec!=0) {
                         retries++;
@@ -46,17 +49,18 @@ static int send_udp_chunked(int sock, const char *msg, struct sockaddr_in *dest)
 
                     UdpChunk chunk;
                     memset(&chunk, 0, sizeof(chunk));
+                    chunk.msg_id=current_msg_id;
                     chunk.seq_num=i;
                     chunk.total_chunks=total_chunks;
                     chunk.is_ack=0;
-                    
+
                     int copy_len=CHUNK_SIZE;
                     if (i==total_chunks-1 && len%CHUNK_SIZE!=0) copy_len=len % CHUNK_SIZE;
-                    
+
                     memcpy(chunk.data, msg+(i*CHUNK_SIZE), copy_len);
 
                     sendto(sock, &chunk, sizeof(chunk), 0, (struct sockaddr *)dest, sizeof(*dest));
-                    
+
                     if (last_sent[i].tv_sec==0) log_event("Sent UDP chunk %d/%d", i+1, total_chunks);
                     else log_event("Retransmitted UDP chunk %d/%d (No ACK received within 0.1s)", i+1, total_chunks);
 
@@ -64,15 +68,15 @@ static int send_udp_chunked(int sock, const char *msg, struct sockaddr_in *dest)
                 }
             }
         }
-        
+
         struct pollfd pfd={sock, POLLIN, 0};
         if (poll(&pfd, 1, 10)>0) {
             UdpChunk recv_chunk;
             struct sockaddr_in from_addr;
             socklen_t from_len=sizeof(from_addr);
-            
-            ssize_t n=recvfrom(sock, &recv_chunk, sizeof(recv_chunk), 0, (struct sockaddr *)&from_addr, &from_len);       
-            if (n>0 && recv_chunk.is_ack && recv_chunk.seq_num>=0 && recv_chunk.seq_num<total_chunks && !acked[recv_chunk.seq_num]) {
+
+            ssize_t n=recvfrom(sock, &recv_chunk, sizeof(recv_chunk), 0, (struct sockaddr *)&from_addr, &from_len);
+            if (n>0 && recv_chunk.is_ack && recv_chunk.msg_id==current_msg_id && recv_chunk.seq_num>=0 && recv_chunk.seq_num<total_chunks && !acked[recv_chunk.seq_num]) {
                 acked[recv_chunk.seq_num]=1;
                 chunks_acked++;
                 log_event("Received ACK for chunk %d/%d", recv_chunk.seq_num+1, total_chunks);
@@ -86,44 +90,55 @@ static int recv_udp_chunked(int sock, char *buffer, int max_len, struct sockaddr
     memset(buffer, 0, max_len);
     int received_chunks=0;
     int expected_chunks=1;
+    int expected_msg_id=0;
     int first_packet_received=0;
     socklen_t src_len=sizeof(*src);
-    
+
     UdpChunk chunk_buffer[256];
     int chunk_received[256]={0};
 
     while (received_chunks<expected_chunks) {
         struct pollfd pfd={sock, POLLIN, 0};
         if (poll(&pfd, 1, 30000)<=0) return -1;
-        
+
         UdpChunk chunk;
         ssize_t n=recvfrom(sock, &chunk, sizeof(chunk), 0, (struct sockaddr *)src, &src_len);
         if (n<=0) return -1;
         if (strncmp((char*)&chunk, MAGIC_PACKET, strlen(MAGIC_PACKET))==0) continue;
 
-        if (chunk.is_ack) continue; 
+        if (chunk.is_ack) continue;
+
+        if (!first_packet_received) {
+            expected_msg_id=chunk.msg_id;
+            expected_chunks=chunk.total_chunks;
+            first_packet_received=1;
+        } else if (chunk.msg_id!=expected_msg_id) {
+            UdpChunk ack;
+            memset(&ack, 0, sizeof(ack));
+            ack.msg_id=chunk.msg_id;
+            ack.seq_num=chunk.seq_num;
+            ack.is_ack=1;
+            sendto(sock, &ack, sizeof(ack), 0, (struct sockaddr *)src, src_len);
+            continue;
+        }
 
         UdpChunk ack;
         memset(&ack, 0, sizeof(ack));
+        ack.msg_id=chunk.msg_id;
         ack.seq_num=chunk.seq_num;
         ack.is_ack=1;
         sendto(sock, &ack, sizeof(ack), 0, (struct sockaddr *)src, src_len);
         log_event("Sent ACK for chunk %d/%d", chunk.seq_num+1, chunk.total_chunks);
 
-        if (!first_packet_received) {
-            expected_chunks=chunk.total_chunks;
-            first_packet_received=1;
-        }
-        
         if (chunk.seq_num>=0 && chunk.seq_num<256 && !chunk_received[chunk.seq_num]) {
             chunk_received[chunk.seq_num]=1;
             chunk_buffer[chunk.seq_num]=chunk;
-            
+
             log_event("Buffered incoming UDP chunk %d/%d", chunk.seq_num+1, chunk.total_chunks);
             received_chunks++;
         }
     }
-    
+
     int current_offset = 0;
     for (int i=0; i<expected_chunks; i++) {
         if (chunk_received[i]) {
@@ -135,7 +150,7 @@ static int recv_udp_chunked(int sock, char *buffer, int max_len, struct sockaddr
             current_offset += copy_len;
         }
     }
-    
+
     log_event("Aggregated and reordered %d UDP chunks into contiguous string.", expected_chunks);
     return 1;
 }
