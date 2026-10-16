@@ -44,13 +44,10 @@ int main(int argc, char *argv[]) {
     bool pending_udp_challenge=false;
     struct sockaddr_in pending_udp_addr;
     char pending_challenger_name[50]={0};
-    int max_known_id=0;
-    int my_id=(int)getpid();
-    
     struct timespec last_bcast;
     clock_gettime(CLOCK_MONOTONIC, &last_bcast);
 
-    send_broadcast(bcast_sock, player_name, listening_port, my_id);
+    send_broadcast(bcast_sock, player_name, listening_port);
 
     struct pollfd pfds[3];
     pfds[0].fd=bcast_sock;
@@ -82,7 +79,7 @@ int main(int argc, char *argv[]) {
 
         if (ret>0) {
             if (pfds[0].revents & POLLIN) {
-                receive_broadcasts(bcast_sock, players, &player_count, &max_known_id, my_id);
+                receive_broadcasts(bcast_sock, players, &player_count, listening_port);
                 needs_redraw=1;
             }
 
@@ -199,7 +196,7 @@ int main(int argc, char *argv[]) {
         long elapsed_ms=(now.tv_sec-last_bcast.tv_sec)*1000+(now.tv_nsec-last_bcast.tv_nsec)/1000000;
         
         if (elapsed_ms>=2000) {
-            send_broadcast(bcast_sock, player_name, listening_port, my_id);
+            send_broadcast(bcast_sock, player_name, listening_port);
             last_bcast=now;
         }
 

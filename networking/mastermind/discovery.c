@@ -5,12 +5,17 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <ifaddrs.h>
 
 #include "discovery.h"
 #include "logger.h"
 
 #ifndef SO_REUSEPORT
 #define SO_REUSEPORT 0x0200
+#endif
+
+#ifndef INADDR_LOOPBACK
+#define INADDR_LOOPBACK (uint32_t)0x7f000001
 #endif
 
 int init_broadcast_socket(void) {
@@ -46,7 +51,27 @@ int init_broadcast_socket(void) {
     return sockfd;
 }
 
-void send_broadcast(int sockfd, const char *name, int listening_port, int my_id) {
+static int is_self(struct in_addr addr, int port, int my_port) {
+    if (port!=my_port) return 0;
+    if (addr.s_addr==htonl(INADDR_LOOPBACK)) return 1;
+    struct ifaddrs *ifap, *ifa;
+    int match=0;
+    if (getifaddrs(&ifap)==0) {
+        for (ifa=ifap; ifa!=NULL; ifa=ifa->ifa_next) {
+            if (ifa->ifa_addr && ifa->ifa_addr->sa_family==AF_INET) {
+                struct sockaddr_in *s=(struct sockaddr_in *)ifa->ifa_addr;
+                if (s->sin_addr.s_addr==addr.s_addr) {
+                    match=1;
+                    break;
+                }
+            }
+        }
+        freeifaddrs(ifap);
+    }
+    return match;
+}
+
+void send_broadcast(int sockfd, const char *name, int listening_port) {
     struct sockaddr_in broadcast_addr;
     memset(&broadcast_addr, 0, sizeof(broadcast_addr));
     broadcast_addr.sin_family=AF_INET;
@@ -54,13 +79,27 @@ void send_broadcast(int sockfd, const char *name, int listening_port, int my_id)
     broadcast_addr.sin_addr.s_addr=htonl(INADDR_BROADCAST);
 
     char payload[256];
-    snprintf(payload, sizeof(payload), "%s|%s|%d|%d", MAGIC_PACKET, name, listening_port, my_id);
+    snprintf(payload, sizeof(payload), "%s|%s|%d", MAGIC_PACKET, name, listening_port);
 
-    sendto(sockfd, payload, strlen(payload), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
+    ssize_t ret=sendto(sockfd, payload, strlen(payload), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
+    if (ret<0) {
+        struct ifaddrs *ifap, *ifa;
+        if (getifaddrs(&ifap)==0) {
+            for (ifa=ifap; ifa!=NULL; ifa=ifa->ifa_next) {
+                if (ifa->ifa_broadaddr && ifa->ifa_broadaddr->sa_family==AF_INET) {
+                    if (strcmp(ifa->ifa_name, "lo0")==0 || strcmp(ifa->ifa_name, "lo")==0) continue;
+                    struct sockaddr_in *baddr=(struct sockaddr_in *)ifa->ifa_broadaddr;
+                    broadcast_addr.sin_addr=baddr->sin_addr;
+                    sendto(sockfd, payload, strlen(payload), 0, (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
+                }
+            }
+            freeifaddrs(ifap);
+        }
+    }
     log_event("Sent UDP broadcast: %s", payload);
 }
 
-void receive_broadcasts(int sockfd, Player players[], int *player_count, int *max_known_id, int my_id) {
+void receive_broadcasts(int sockfd, Player players[], int *player_count, int my_listening_port) {
     char buffer[512];
     struct sockaddr_in sender_addr;
     socklen_t sender_len=sizeof(sender_addr);
@@ -75,28 +114,25 @@ void receive_broadcasts(int sockfd, Player players[], int *player_count, int *ma
         char *magic=strtok(buffer, "|");
         char *name=strtok(NULL, "|");
         char *port_str=strtok(NULL, "|");
-        char *id_str=strtok(NULL, "|");
 
-        if (magic && name && port_str && id_str && strcmp(magic, MAGIC_PACKET)==0) {
+        if (magic && name && port_str && strcmp(magic, MAGIC_PACKET)==0) {
             int port=atoi(port_str);
-            int remote_id=atoi(id_str);
-            if (remote_id > *max_known_id) *max_known_id=remote_id;
-
-            if (my_id>0 && remote_id==my_id) return;
+            if (is_self(sender_addr.sin_addr, port, my_listening_port)) return;
 
             char ip[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &(sender_addr.sin_addr), ip, INET_ADDRSTRLEN);
             
-            log_event("Received UDP broadcast from %s (ID: %d, IP: %s, Port: %d)", name, remote_id, ip, port);
+            log_event("Received UDP broadcast from %s (IP: %s, Port: %d)", name, ip, port);
 
             int found=0;
             struct timespec now;
             clock_gettime(CLOCK_MONOTONIC, &now);
 
             for (int i=0; i<*player_count; i++) {
-                if (strcmp(players[i].ip_addr, ip)==0 && players[i].port==port) {
+                if ((strcmp(players[i].ip_addr, ip)==0 || strcmp(players[i].name, name)==0) && players[i].port==port) {
                     players[i].last_seen=now;
                     strcpy(players[i].name, name);
+                    if (strcmp(ip, "127.0.0.1")!=0) strcpy(players[i].ip_addr, ip);
                     if (!players[i].active) players[i].active=1;
                     found=1;
                     break;
