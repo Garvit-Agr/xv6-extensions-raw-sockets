@@ -150,6 +150,12 @@ usertests -q
 
 <!-- where the reference counts live and how they are locked, which pte bit marks a page cow, and how a write fault duplicates a page -->
 
+We keep an array of reference counts in kalloc.c covering physical RAM from KERNBASE to PHYSTOP, protected by a dedicated pageref.lock spinlock. The array index is simply (pa-KERNBASE)/PGSIZE.
+
+To flag a COW page, we use bit 8 of the PTE: PTE_COW (1L<<8), which RISC-V reserves for software use.
+
+In uvmcopy, instead of allocating new physical pages for the child, we map the parent's pages directly. We clear PTE_W, set PTE_COW on both page tables, and bump the page reference count. When someone writes to a shared page, usertrap catches scause 15 and calls cowfault. If the reference count is already 1, we just restore PTE_W in place. If it is shared, we allocate a new physical page with kalloc, copy the 4096 bytes, point the PTE to the new page with write permission, and call kfree on the old page. We also added this cowfault check to copyout so syscalls writing into user buffers don't crash.
+
 ### Alarms
 
 <!-- the fields you added to struct proc, what state sigreturn restores, and how you stop a handler being re-entered -->
@@ -158,6 +164,10 @@ usertests -q
 
 <!-- anything you took for granted that the spec did not state -->
 
+none
+
 ### Known bugs
 
 <!-- what does not work, and which test shows it; write "none known" if there are none -->
+
+none known
