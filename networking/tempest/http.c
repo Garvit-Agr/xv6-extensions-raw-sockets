@@ -82,8 +82,10 @@ void parse_http_response(const char *response, bool raw_output) {
         }
         printf("<\n");
         printf("%s", body+4);
+        if (is_error) exit(EXIT_FAILURE);
     }
-    else if (!is_error) printf("%s", body+4);
-
-    if (is_error) die("tempest: invalid location");
+    else {
+        if (is_error) die("tempest: invalid location");
+        printf("%s", body+4);
+    }
 }
