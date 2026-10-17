@@ -18,7 +18,7 @@ int main(int argc, char *argv[]) {
 
     bool enable_logging = false;
     bool cost_cutting=false;
-    int listening_port=8080;
+    int listening_port=8081;
 
     for (int i=1; i<argc; i++) {
         if (strcmp(argv[i], "--log") == 0) enable_logging=true;
@@ -44,8 +44,9 @@ int main(int argc, char *argv[]) {
     bool pending_udp_challenge=false;
     struct sockaddr_in pending_udp_addr;
     char pending_challenger_name[50]={0};
-    struct timespec last_bcast;
+    struct timespec last_bcast, last_redraw;
     clock_gettime(CLOCK_MONOTONIC, &last_bcast);
+    last_redraw=last_bcast;
 
     send_broadcast(bcast_sock, player_name, listening_port);
 
@@ -67,12 +68,19 @@ int main(int argc, char *argv[]) {
                 fflush(stdout);
             }
             needs_redraw=0;
+            clock_gettime(CLOCK_MONOTONIC, &last_redraw);
         }
 
         struct timespec loop_start;
         clock_gettime(CLOCK_MONOTONIC, &loop_start);
         long elapsed_since_bcast=(loop_start.tv_sec-last_bcast.tv_sec)*1000 + (loop_start.tv_nsec-last_bcast.tv_nsec)/1000000;
         int poll_timeout = 2000 - elapsed_since_bcast;
+
+        if (player_count>0) {
+            long elapsed_since_redraw=((loop_start.tv_sec-last_redraw.tv_sec)*1000)+((loop_start.tv_nsec-last_redraw.tv_nsec)/1000000);
+            int timeout_redraw=1000-elapsed_since_redraw;
+            if (timeout_redraw<poll_timeout) poll_timeout=timeout_redraw;
+        }
         if (poll_timeout < 0) poll_timeout = 0;
 
         int ret=poll(pfds, 3, poll_timeout);
@@ -199,6 +207,9 @@ int main(int argc, char *argv[]) {
             send_broadcast(bcast_sock, player_name, listening_port);
             last_bcast=now;
         }
+
+        long elapsed_redraw_ms=((now.tv_sec-last_redraw.tv_sec)*1000)+((now.tv_nsec-last_redraw.tv_nsec)/1000000);
+        if (player_count>0 && elapsed_redraw_ms>=1000) needs_redraw=1;
 
         int active_before=0;
         for (int i=0; i<player_count; i++) if (players[i].active) active_before++;
