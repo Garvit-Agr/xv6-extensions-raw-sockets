@@ -160,6 +160,14 @@ In uvmcopy, instead of allocating new physical pages for the child, we map the p
 
 <!-- the fields you added to struct proc, what state sigreturn restores, and how you stop a handler being re-entered -->
 
+struct proc gets five new fields for alarms: alarm_ticks, alarm_elapsed, alarm_handler, alarm_running, and alarm_tf.
+
+We allocate alarm_tf upfront in allocproc. That costs an extra page per process, but it ensures usertrap never fails or blocks trying to find memory while handling a timer tick. freeproc cleans it up on exit.
+
+On timer interrupts, usertrap increments alarm_elapsed when ticks are active. Once alarm_elapsed reaches alarm_ticks, we copy *p->trapframe into *p->alarm_tf, point p->trapframe->epc to alarm_handler, and set alarm_running to 1. This flag prevents re-entrancy. As long as alarm_running is set, later timer interrupts ignore the tick count so the handler cannot interrupt itself.
+
+When the handler returns, it calls sigreturn. sys_sigreturn restores the saved registers by copying *p->alarm_tf back into *p->trapframe, resets alarm_running to 0, and returns the original a0 value.
+
 ### Assumptions
 
 <!-- anything you took for granted that the spec did not state -->
