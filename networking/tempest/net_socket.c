@@ -97,7 +97,12 @@ void send_data(int sockfd, const char *data, size_t length, struct timespec star
 
         n=send(sockfd, data+total_sent ,bytes_left, 0);
 
-        if (n<=0) die("tempest: failed to send data");
+        if (n<0) {
+            if (errno==EAGAIN || errno==EWOULDBLOCK || errno==EINTR) continue;
+            fprintf(stderr, "tempest: send failed: %s\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        if (n==0) die("tempest: connection closed");
 
         total_sent+=n;
         bytes_left-=n;

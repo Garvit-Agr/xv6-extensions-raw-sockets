@@ -31,7 +31,7 @@ The code is split across four files:
 
 Reading the response body: We start with an 8 KB buffer on the heap and pull data using recv inside a poll loop. Whenever headroom drops under 1 KB, we double the buffer size with realloc. Since the request asks for Connection: close, the server shuts down the socket right after sending everything. Recv hits EOF by returning zero bytes. We then find \r\n\r\n to separate the headers from the actual body text.
 
-Detecting an invalid location: wttr.is usually gives a 404 or 500 status line when a city does not exist, but occasionally it returns 200 OK while printing location not found inside the page. We check for both cases. If the status is not 200 or the body contains that error string, we treat the location as invalid. When --raw is enabled, we dump the raw headers and body to stdout first, then print tempest: invalid location to stderr and exit with code 1.
+Detecting an invalid location: wttr.is usually gives a 404 or 500 status line when a city does not exist, but occasionally it returns 200 OK while printing location not found inside the page. We check for both cases. If the status is not 200 or the body contains that error string, we treat the location as invalid. When --raw is enabled, we dump the raw request and response to stdout and exit with code 1 without printing an error string.
 
 #### Changed defaults
 
