@@ -29,7 +29,7 @@ The code is split across four files:
 - `net_socket.c`: resolves wttr.is via getaddrinfo, sets up non-blocking sockets, and runs poll loops for send and receive.
 - `main.c`: drives the overall flow and ignores SIGPIPE so a sudden disconnect does not crash the binary.
 
-Reading the response body: We start with an 8 KB buffer on the heap and pull data using recv inside a poll loop. Whenever headroom drops under 1 KB, we double the buffer size with realloc. Since the request asks for Connection: close, the server shuts down the socket right after sending everything. Recv hits EOF by returning zero bytes. We then find \r\n\r\n to separate the headers from the actual body text.
+Reading the response body: We start with an 8 KB buffer on the heap and pull data using recv inside a poll loop. Whenever headroom drops under 1 KB, we double the buffer size with realloc. Once headers arrive, we inspect Content-Length and stop reading as soon as the full body is received, or when the server closes the connection on EOF. We then find \r\n\r\n to separate the headers from the actual body text.
 
 Detecting an invalid location: wttr.is usually gives a 404 or 500 status line when a city does not exist, but occasionally it returns 200 OK while printing location not found inside the page. We check for both cases. If the status is not 200 or the body contains that error string, we treat the location as invalid. When --raw is enabled, we dump the raw request and response to stdout and exit with code 1 without printing an error string.
 
@@ -74,7 +74,7 @@ The implementation is organized across seven files:
 
 <!-- the 4-byte magic and the broadcast payload layout; the sender's ip comes from the packet source, not the payload -->
 
-Peers broadcast UDP datagrams to port 8888 every 2 seconds using the layout MST1|<name>|<port>. The MST1 prefix drops random network noise right away. The receiving end gets the sender IP directly from the sockaddr_in structure in recvfrom, while the payload itself stays limited to the player name and listening port. To stop a node from adding itself to its own lobby, is_self compares the incoming packet IP against local interface addresses from getifaddrs alongside the listening port.
+Peers broadcast UDP datagrams to port 8888 every 2 seconds using the layout GARV|<name>|<port>. The GARV prefix drops random network noise right away. The receiving end gets the sender IP directly from the sockaddr_in structure in recvfrom, while the payload itself stays limited to the player name and listening port. To stop a node from adding itself to its own lobby, is_self compares the incoming packet IP against local interface addresses from getifaddrs alongside the listening port.
 
 #### Message verbs
 

@@ -136,9 +136,23 @@ char *receive_data(int sockfd, struct timespec start) {
 
         bytes_read=recv(sockfd, buffer+total_received, capacity-total_received-1, 0);
         
-        if (bytes_read<=0) break;
+        if (bytes_read<=0) {
+            if (bytes_read<0 && (errno==EINTR || errno==EAGAIN || errno==EWOULDBLOCK)) continue;
+            break;
+        }
 
         total_received+=bytes_read;
+        buffer[total_received]='\0';
+
+        char *hdr_end=strstr(buffer, "\r\n\r\n");
+        if (hdr_end) {
+            char *cl=strstr(buffer, "Content-Length:");
+            if (!cl) cl=strstr(buffer, "content-length:");
+            if (cl && cl<hdr_end) {
+                long clen=strtol(cl+15, NULL, 10);
+                if ((buffer+total_received)-(hdr_end+4)>=clen) break;
+            }
+        }
         
         if (capacity-total_received<1024) {
             capacity*=2;
@@ -147,7 +161,10 @@ char *receive_data(int sockfd, struct timespec start) {
         }
     }
 
-    if (bytes_read==-1) die("tempest: recv failed");
+    if (bytes_read==-1) {
+        fprintf(stderr, "tempest: recv failed: %s\n", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
 
     buffer[total_received]='\0';
     return buffer;

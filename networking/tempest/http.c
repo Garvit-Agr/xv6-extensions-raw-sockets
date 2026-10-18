@@ -65,7 +65,7 @@ void parse_http_response(const char *response, bool raw_output) {
     if (!body) die("tempest: invalid http response format");
 
     bool is_error=false;
-    if (strncmp(response, "HTTP/1.1 200", 12)!=0 && strncmp(response, "HTTP/1.0 200", 12)!=0) is_error=true;
+    if (strncmp(response, "HTTP/1.1 200 ", 13)!=0 && strncmp(response, "HTTP/1.0 200 ", 13)!=0) is_error=true;
     if (strstr(response, "location not found")!=NULL) is_error=true;
 
     if (raw_output) {
