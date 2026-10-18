@@ -18,7 +18,7 @@ int main(int argc, char *argv[]) {
 
     bool enable_logging = false;
     bool cost_cutting=false;
-    int listening_port=8081;
+    int listening_port=8080;
 
     for (int i=1; i<argc; i++) {
         if (strcmp(argv[i], "--log") == 0) enable_logging=true;

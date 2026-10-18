@@ -120,7 +120,7 @@ In UDP cost-cutting mode, if an opponent takes longer than 30 seconds to submit 
 
 <!-- what does not work, and when; write "none known" if there are none -->
 
-none known
+Cross-platform play between macOS and Linux has two quirks. A Mac challenging a Linux peer occasionally fails to connect, while the reverse direction works reliably. We also noticed irregular broadcast packet drops across the two operating systems. Linux to Linux runs fine. Running separate instances on different ports on a single Mac machine works without issue, but testing across two physical Macs was not possible without a second Mac.
 
 ## xv6
 
