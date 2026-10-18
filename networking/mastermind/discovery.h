@@ -21,5 +21,6 @@ void send_broadcast(int sockfd, const char *name, int listening_port);
 void receive_broadcasts(int sockfd, Player players[], int *player_count, int my_listening_port);
 void cleanup_stale_players(Player players[], int *player_count);
 void print_players(Player players[], int player_count);
+void drain_broadcast_socket(int sockfd);
 
 #endif

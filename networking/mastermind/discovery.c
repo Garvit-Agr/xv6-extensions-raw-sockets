@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
+#include <poll.h>
 
 #include "discovery.h"
 #include "logger.h"
@@ -115,7 +116,7 @@ void receive_broadcasts(int sockfd, Player players[], int *player_count, int my_
         char *name=strtok(NULL, "|");
         char *port_str=strtok(NULL, "|");
 
-        if (magic && name && port_str && strcmp(magic, MAGIC_PACKET)==0) {
+        if (magic && name && port_str && strlen(name)>0 && strcmp(magic, MAGIC_PACKET)==0) {
             int port=atoi(port_str);
             if (is_self(sender_addr.sin_addr, port, my_listening_port)) return;
 
@@ -129,10 +130,9 @@ void receive_broadcasts(int sockfd, Player players[], int *player_count, int my_
             clock_gettime(CLOCK_MONOTONIC, &now);
 
             for (int i=0; i<*player_count; i++) {
-                if ((strcmp(players[i].ip_addr, ip)==0 || strcmp(players[i].name, name)==0) && players[i].port==port) {
+                if (strcmp(players[i].ip_addr, ip)==0 && players[i].port==port) {
                     players[i].last_seen=now;
-                    strcpy(players[i].name, name);
-                    if (strcmp(ip, "127.0.0.1")!=0) strcpy(players[i].ip_addr, ip);
+                    snprintf(players[i].name, sizeof(players[i].name), "%s", name);
                     if (!players[i].active) players[i].active=1;
                     found=1;
                     break;
@@ -141,7 +141,7 @@ void receive_broadcasts(int sockfd, Player players[], int *player_count, int my_
 
             if (!found && *player_count<MAX_PLAYERS) {
                 players[*player_count].id=(*player_count)+1;
-                strcpy(players[*player_count].name, name);
+                snprintf(players[*player_count].name, sizeof(players[*player_count].name), "%s", name);
                 strcpy(players[*player_count].ip_addr, ip);
                 players[*player_count].port=port;
                 players[*player_count].last_seen=now;
@@ -199,4 +199,12 @@ void print_players(Player players[], int player_count) {
     }
     printf("____________________________________________________\n> ");
     fflush(stdout);
+}
+
+void drain_broadcast_socket(int sockfd) {
+    struct pollfd pfd={sockfd, POLLIN, 0};
+    char dummy[512];
+    while (poll(&pfd, 1, 0)>0 && (pfd.revents & POLLIN)) {
+        recvfrom(sockfd, dummy, sizeof(dummy), 0, NULL, NULL);
+    }
 }

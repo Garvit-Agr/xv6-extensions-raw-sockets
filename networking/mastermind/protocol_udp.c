@@ -80,6 +80,14 @@ static int send_udp_chunked(int sock, const char *msg, struct sockaddr_in *dest)
                 acked[recv_chunk.seq_num]=1;
                 chunks_acked++;
                 log_event("Received ACK for chunk %d/%d", recv_chunk.seq_num+1, total_chunks);
+            } else if (n>0 && !recv_chunk.is_ack && from_addr.sin_addr.s_addr==dest->sin_addr.s_addr && from_addr.sin_port==dest->sin_port) {
+                UdpChunk ack;
+                memset(&ack, 0, sizeof(ack));
+                ack.msg_id=recv_chunk.msg_id;
+                ack.seq_num=recv_chunk.seq_num;
+                ack.is_ack=1;
+                sendto(sock, &ack, sizeof(ack), 0, (struct sockaddr *)dest, sizeof(*dest));
+                log_event("Sent ACK for retransmitted chunk %d/%d", recv_chunk.seq_num+1, recv_chunk.total_chunks);
             }
         }
     }
@@ -102,9 +110,15 @@ static int recv_udp_chunked(int sock, char *buffer, int max_len, struct sockaddr
         if (poll(&pfd, 1, 30000)<=0) return -1;
 
         UdpChunk chunk;
-        ssize_t n=recvfrom(sock, &chunk, sizeof(chunk), 0, (struct sockaddr *)src, &src_len);
+        struct sockaddr_in from_addr;
+        socklen_t from_len=sizeof(from_addr);
+        ssize_t n=recvfrom(sock, &chunk, sizeof(chunk), 0, (struct sockaddr *)&from_addr, &from_len);
         if (n<=0) return -1;
         if (strncmp((char*)&chunk, MAGIC_PACKET, strlen(MAGIC_PACKET))==0) continue;
+        if (src->sin_port!=0) {
+            if (from_addr.sin_addr.s_addr!=src->sin_addr.s_addr || from_addr.sin_port!=src->sin_port) continue;
+        }
+        else *src=from_addr;
 
         if (chunk.is_ack) continue;
 
@@ -118,7 +132,8 @@ static int recv_udp_chunked(int sock, char *buffer, int max_len, struct sockaddr
             ack.msg_id=chunk.msg_id;
             ack.seq_num=chunk.seq_num;
             ack.is_ack=1;
-            sendto(sock, &ack, sizeof(ack), 0, (struct sockaddr *)src, src_len);
+            sendto(sock, &ack, sizeof(ack), 0, (struct sockaddr *)src, sizeof(*src));
+            log_event("Sent ACK for old chunk %d/%d", chunk.seq_num+1, chunk.total_chunks);
             continue;
         }
 
@@ -213,6 +228,12 @@ int send_udp_challenge(int udp_sock, Player *p, const char *my_name, struct sock
     return -1;
 }
 
+static int wait_for_stdin(void) {
+    fflush(stdout);
+    struct pollfd pfd={STDIN_FILENO, POLLIN, 0};
+    return poll(&pfd, 1, 30000);
+}
+
 void play_mastermind_udp(int udp_sock, struct sockaddr_in *peer_addr, const char *opponent_name) {
     char secret[100];
     char guesses[MAX_ATTEMPTS][10];
@@ -222,6 +243,10 @@ void play_mastermind_udp(int udp_sock, struct sockaddr_in *peer_addr, const char
     printf("\033[2J\033[H");
     while (1) {
         printf("Enter your 5-digit secret sequence: ");
+        if (wait_for_stdin()<=0) {
+            display_disconnection_error(opponent_name);
+            return;
+        }
         if (fgets(secret, sizeof(secret), stdin)!=NULL) {
             secret[strcspn(secret, "\n")]='\0';
             if (validate_sequence(secret)) break;
@@ -251,6 +276,10 @@ void play_mastermind_udp(int udp_sock, struct sockaddr_in *peer_addr, const char
         char feedback[10];
         while (1) {
             printf("> Codebreaker guessed %s. Press Enter to send feedback [%s] (or type 5-char feedback): ", guess, auto_fb);
+            if (wait_for_stdin()<=0) {
+                display_disconnection_error(opponent_name);
+                return;
+            }
             if (fgets(fb_input, sizeof(fb_input), stdin)!=NULL) {
                 fb_input[strcspn(fb_input, "\n")]='\0';
                 if (strlen(fb_input)==0) {
@@ -307,6 +336,10 @@ void play_codebreaker_udp(int udp_sock, struct sockaddr_in *peer_addr, const cha
     while (attempts<MAX_ATTEMPTS) {
         char guess[100];
         printf("> Enter your 5-digit guess: ");
+        if (wait_for_stdin()<=0) {
+            display_disconnection_error(opponent_name);
+            return;
+        }
 
         if (fgets(guess, sizeof(guess), stdin)!=NULL) {
             guess[strcspn(guess, "\n")]='\0';
@@ -325,16 +358,12 @@ void play_codebreaker_udp(int udp_sock, struct sockaddr_in *peer_addr, const cha
             printf("> Waiting for Mastermind's feedback...\n");
             char feedback[10];
             
-            if (recv_udp_chunked(udp_sock, feedback, sizeof(feedback), peer_addr) < 0) {
-                log_event("UDP connection lost while waiting for feedback from %s.", opponent_name);
+            if (recv_udp_chunked(udp_sock, feedback, sizeof(feedback), peer_addr) < 0 || !validate_feedback(feedback)) {
+                log_event("UDP connection lost or invalid feedback from %s.", opponent_name);
                 display_disconnection_error(opponent_name);
                 return;
             }
             log_event("Received UDP feedback from Mastermind (%s): %s", opponent_name, feedback);
-
-            if (!validate_feedback(feedback)) {
-                log_event("Received malformed UDP feedback from Mastermind (%s): %s", opponent_name, feedback);
-            }
 
             strcpy(guesses[attempts], guess);
             strcpy(feedbacks[attempts], feedback);

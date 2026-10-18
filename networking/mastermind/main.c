@@ -125,6 +125,7 @@ int main(int argc, char *argv[]) {
                             printf("\n[Game Started (UDP Cost-Cutting)! You are the Codebreaker]\n");
                             play_codebreaker_udp(game_listen_sock, &pending_udp_addr, pending_challenger_name);
                             log_event("UDP Codebreaker game loop terminated. Returning to lobby.");
+                            drain_broadcast_socket(bcast_sock);
                         } else {
                             send_udp_challenge_response(game_listen_sock, &pending_udp_addr, "no");
                             printf("\n> Challenge rejected.\n");
@@ -140,6 +141,7 @@ int main(int argc, char *argv[]) {
                             
                             play_codebreaker(pending_challenge_sock, pending_challenger_name);
                             log_event("Codebreaker game loop terminated. Returning to lobby.");
+                            drain_broadcast_socket(bcast_sock);
                         } else {
                             send(pending_challenge_sock, "no", 2, 0);
                             log_event("Sent TCP challenge response: no");
@@ -168,6 +170,7 @@ int main(int argc, char *argv[]) {
                                         printf("\n[Game Started (UDP Cost-Cutting)! You are the Mastermind]\n");
                                         play_mastermind_udp(game_listen_sock, &target_addr, target->name);
                                         log_event("UDP Mastermind game loop terminated. Returning to lobby.");
+                                        drain_broadcast_socket(bcast_sock);
                                     }
                                     else {
                                         printf("\n> Challenge failed or rejected.\n");
@@ -183,6 +186,7 @@ int main(int argc, char *argv[]) {
                                         play_mastermind(game_sock, target->name);
                                         log_event("Mastermind game loop terminated. Returning to lobby.");
                                         close(game_sock);
+                                        drain_broadcast_socket(bcast_sock);
                                     } else {
                                         printf("\n> Challenge failed or rejected.\n");
                                         sleep(1);
