@@ -3,7 +3,7 @@
 
 #include <time.h>
 
-#define MAGIC_PACKET "MST1"
+#define MAGIC_PACKET "GARV"
 #define BROADCAST_PORT 8888
 #define MAX_PLAYERS 10
 
